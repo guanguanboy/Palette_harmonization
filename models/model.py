@@ -77,7 +77,10 @@ class Palette(BaseModel):
     def save_current_results(self):
         ret_path = []
         ret_result = []
+        print('self.output.shape=', self.output.shape)
         for idx in range(self.batch_size):
+            print('batch_size:', self.batch_size)
+            print('idx:',idx)
             ret_path.append('In_{}'.format(self.path[idx]))
             ret_result.append(self.gt_image[idx].detach().float().cpu())
 
@@ -85,7 +88,7 @@ class Palette(BaseModel):
             ret_result.append(self.visuals[idx::self.batch_size].detach().float().cpu())
             
             ret_path.append('Out_{}'.format(self.path[idx]))
-            ret_result.append(self.visuals[idx-self.batch_size].detach().float().cpu())
+            ret_result.append(self.output.detach().float().cpu()) #这里记录的是idx减去batch_size的
 
         self.results_dict = self.results_dict._replace(name=ret_path, result=ret_result)
         return self.results_dict._asdict()
