@@ -10,10 +10,15 @@ class Network(BaseNetwork):
         super(Network, self).__init__(**kwargs)
         if module_name == 'sr3':
             from .sr3_modules.unet import UNet
+            self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
+
         elif module_name == 'guided_diffusion':
             from .guided_diffusion_modules.unet import UNet
-        
-        self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
+            self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
+
+        elif module_name == 'transformer':
+            from .transformer_modules.timeswinir import TimeSwinIR
+            self.denoise_fn = TimeSwinIR(**unet) #去噪模型是一个u-net
         self.beta_schedule = beta_schedule
 
     def set_loss(self, loss_fn):
