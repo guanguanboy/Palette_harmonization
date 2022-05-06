@@ -1,17 +1,148 @@
+"""
+Various utilities for neural networks.
+"""
+
+import math
+import numpy as np
+import torch 
+import torch.nn as nn
+
+
+class GroupNorm32(nn.GroupNorm):
+    def forward(self, x):
+        return super().forward(x.float()).type(x.dtype)
+
+
+def zero_module(module):
+    """
+    Zero out the parameters of a module and return it.
+    """
+    for p in module.parameters():
+        p.detach().zero_()
+    return module
+
+
+def scale_module(module, scale):
+    """
+    Scale the parameters of a module and return it.
+    """
+    for p in module.parameters():
+        p.detach().mul_(scale)
+    return module
+
+
+def mean_flat(tensor):
+    """
+    Take the mean over all non-batch dimensions.
+    """
+    return tensor.mean(dim=list(range(1, len(tensor.shape))))
+
+
+def normalization(channels):
+    """
+    Make a standard normalization layer.
+
+    :param channels: number of input channels.
+    :return: an nn.Module for normalization.
+    """
+    return GroupNorm32(32, channels)
+
+
+
+def checkpoint(func, inputs, params, flag):
+    """
+    Evaluate a function without caching intermediate activations, allowing for
+    reduced memory at the expense of extra compute in the backward pass.
+
+    :param func: the function to evaluate.
+    :param inputs: the argument sequence to pass to `func`.
+    :param params: a sequence of parameters `func` depends on but does not
+                   explicitly take as arguments.
+    :param flag: if False, disable gradient checkpointing.
+    """
+    if flag:
+        args = tuple(inputs) + tuple(params)
+        return CheckpointFunction.apply(func, len(inputs), *args)
+    else:
+        return func(*inputs)
+
+
+class CheckpointFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, run_function, length, *args):
+        ctx.run_function = run_function
+        ctx.input_tensors = list(args[:length])
+        ctx.input_params = list(args[length:])
+        with torch.no_grad():
+            output_tensors = ctx.run_function(*ctx.input_tensors)
+        return output_tensors
+
+    @staticmethod
+    def backward(ctx, *output_grads):
+        ctx.input_tensors = [x.detach().requires_grad_(True) for x in ctx.input_tensors]
+        with torch.enable_grad():
+            # Fixes a bug where the first op in run_function modifies the
+            # Tensor storage in place, which is not allowed for detach()'d
+            # Tensors.
+            shallow_copies = [x.view_as(x) for x in ctx.input_tensors]
+            output_tensors = ctx.run_function(*shallow_copies)
+        input_grads = torch.autograd.grad(
+            output_tensors,
+            ctx.input_tensors + ctx.input_params,
+            output_grads,
+            allow_unused=True,
+        )
+        del ctx.input_tensors
+        del ctx.input_params
+        del output_tensors
+        return (None, None) + input_grads
+
+
+def count_flops_attn(model, _x, y):
+    """
+    A counter for the `thop` package to count the operations in an
+    attention operation.
+    Meant to be used like:
+        macs, params = thop.profile(
+            model,
+            inputs=(inputs, timestamps),
+            custom_ops={QKVAttention: QKVAttention.count_flops},
+        )
+    """
+    b, c, *spatial = y[0].shape
+    num_spatial = int(np.prod(spatial))
+    # We perform two matmuls with the same number of ops.
+    # The first computes the weight matrix, the second computes
+    # the combination of the value vectors.
+    matmul_ops = 2 * b * (num_spatial ** 2) * c
+    model.total_ops += torch.DoubleTensor([matmul_ops])
+
+
+def gamma_embedding(gammas, dim, max_period=10000):
+    """
+    Create sinusoidal timestep embeddings.
+    :param gammas: a 1-D Tensor of N indices, one per batch element.
+                      These may be fractional.
+    :param dim: the dimension of the output.
+    :param max_period: controls the minimum frequency of the embeddings.
+    :return: an [N x dim] Tensor of positional embeddings.
+    """
+    half = dim // 2
+    freqs = torch.exp(
+        -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+    ).to(device=gammas.device)
+    args = gammas[:, None].float() * freqs[None]
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    if dim % 2:
+        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+    return embedding
+
 from abc import abstractmethod
 import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from .nn import (
-    checkpoint,
-    zero_module,
-    normalization,
-    count_flops_attn,
-    gamma_embedding
-)
 
 class SiLU(nn.Module):
     def forward(self, x):
@@ -189,13 +320,21 @@ class ResBlock(EmbedBlock):
             h = in_conv(h)
         else:
             h = self.in_layers(x)
-        emb_out = self.emb_layers(emb).type(h.dtype)
+        print('h.shape=', h.shape) #h.shape= torch.Size([3, 64, 64, 64])
+        emb_out = self.emb_layers(emb).type(h.dtype) 
+        print('emb_out.shape=', emb_out.shape) #emb_out.shape= torch.Size([3, 128])
         while len(emb_out.shape) < len(h.shape):
             emb_out = emb_out[..., None]
+        print('after while emb_out.shape=', emb_out.shape) #torch.Size([3, 128, 1, 1])
         if self.use_scale_shift_norm:
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
-            scale, shift = torch.chunk(emb_out, 2, dim=1)
+            scale, shift = torch.chunk(emb_out, 2, dim=1) #用来将tensor分成很多个块，简而言之我理解的就是切分吧，可以在不同维度上切分。
+            print('scale.shape=', scale.shape) #torch.Size([3, 64, 1, 1])
+            print('shift.shape=', shift.shape) #torch.Size([3, 64, 1, 1])
+            print('out_norm(h).shape=', out_norm(h).shape) #torch.Size([3, 64, 64, 64])
+
             h = out_norm(h) * (1 + scale) + shift
+            print('h.shape=',h.shape)
             h = out_rest(h)
         else:
             h = h + emb_out
@@ -384,6 +523,7 @@ class UNet(nn.Module):
         self.num_heads_upsample = num_heads_upsample
 
         cond_embed_dim = inner_channel * 4
+        print('cond_embed_dim=',cond_embed_dim)
         self.cond_embed = nn.Sequential(
             nn.Linear(inner_channel, cond_embed_dim),
             SiLU(),
@@ -530,18 +670,18 @@ class UNet(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
         hs = []
-        gammas = gammas.view(-1, )
-        emb = self.cond_embed(gamma_embedding(gammas, self.inner_channel))
+        gammas = gammas.view(-1, ) #cond_embed_dim= 256
+        emb = self.cond_embed(gamma_embedding(gammas, self.inner_channel)) #emb.shape torch.Size([3, 256])
 
         h = x.type(torch.float32)
-        for module in self.input_blocks:
+        for module in self.input_blocks: #unet的contracting步骤
             h = module(h, emb)
-            hs.append(h)
-        h = self.middle_block(h, emb)
-        for module in self.output_blocks:
-            h = torch.cat([h, hs.pop()], dim=1)
+            hs.append(h) #将跳跃连接需要跳跃的部分保存起来
+        h = self.middle_block(h, emb) #unet的连接步骤
+        for module in self.output_blocks: # unet的expanding步骤
+            h = torch.cat([h, hs.pop()], dim=1) 
             h = module(h, emb)
-        h = h.type(x.dtype)
+        h = h.type(x.dtype) #h.shape torch.Size([3, 64, 64, 64])
         return self.out(h)
 
 if __name__ == '__main__':
@@ -555,7 +695,10 @@ if __name__ == '__main__':
         res_blocks=2,
         attn_res=[8]
     )
+    #print(model)
     x = torch.randn((b, c, h, w))
-    emb = torch.ones((b, ))
-    out = model(x, emb)
-    print(out.shape)
+    print(x.shape) #torch.Size([3, 6, 64, 64])
+    emb = torch.ones((b, )) #torch.Size([3])
+    print(emb.shape)
+    out = model(x, emb) 
+    print(out.shape) #torch.Size([3, 3, 64, 64])

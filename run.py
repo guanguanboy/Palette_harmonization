@@ -84,7 +84,7 @@ if __name__ == '__main__':
 
     ''' parser configs '''
     args = parser.parse_args()
-    opt = Praser.parse(args)
+    opt = Praser.parse(args) #自定义的类来解析--config参数
     
     ''' cuda devices '''
     gpu_str = ','.join(str(x) for x in opt['gpu_ids'])

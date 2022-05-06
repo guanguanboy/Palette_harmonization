@@ -88,7 +88,7 @@ class Palette(BaseModel):
             ret_result.append(self.visuals[idx::self.batch_size].detach().float().cpu())
             
             ret_path.append('Out_{}'.format(self.path[idx]))
-            ret_result.append(self.output.detach().float().cpu()) #这里记录的是idx减去batch_size的
+            ret_result.append(self.visuals[idx-self.batch_size].detach().float().cpu()) #这里记录的是idx减去batch_size的
 
         self.results_dict = self.results_dict._replace(name=ret_path, result=ret_result)
         return self.results_dict._asdict()

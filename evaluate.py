@@ -18,7 +18,8 @@ if __name__ == '__main__':
     harmonized_paths = []
     real_paths = []
 
-    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
+    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_162755/results/test/0/'
     files = '/data1/liguanlin/Datasets/iHarmony/Hday2night/Hday2night_test.txt'
     with open(files,'r') as f:
             for line in f.readlines():
