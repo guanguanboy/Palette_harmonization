@@ -32,7 +32,7 @@ class BaseModel():
         self.results_dict = CustomResult([],[]) # {"name":[], "result":[]}
 
     def train(self):
-        while self.epoch <= self.opt['train']['n_epoch'] and self.iter <= self.opt['train']['n_iter']:
+        while self.epoch <= self.opt['train']['n_epoch'] and self.iter <= self.opt['train']['n_iter']: #两个条件同时成立才进行下一次训练，有一个不成立就终止训练
             self.epoch += 1
             if self.opt['distributed']:
                 ''' sets the epoch for this sampler. When :attr:`shuffle=True`, this ensures all replicas use a different random ordering for each epoch '''
