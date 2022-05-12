@@ -70,7 +70,8 @@ def main_worker(gpu, ngpus_per_node, opt):
         else:
             model.test()
     finally:
-        phase_writer.close()
+        if phase_writer:
+            phase_writer.close()
         
         
 if __name__ == '__main__':
