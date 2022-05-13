@@ -23,10 +23,10 @@ if __name__ == '__main__':
     real_paths = []
     mask_paths = []
 
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
+    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_162755/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_113835/results/test/0/'
-    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_155132/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_155132/results/test/0/'
     files = '/data1/liguanlin/Datasets/iHarmony/Hday2night/Hday2night_test.txt'
     with open(files,'r') as f:
             for line in f.readlines():
@@ -81,12 +81,14 @@ if __name__ == '__main__':
         mask = Image.open(mask_paths[i]).convert('1') #获取mask区域。
         mask = tf.resize(mask, [image_size,image_size], interpolation=Image.BICUBIC)
 
-        mask = tf.to_tensor(mask).unsqueeze(0)
-        harmonized = tf.to_tensor(harmonized_np).unsqueeze(0)
-        real = tf.to_tensor(real_np).unsqueeze(0)
+        mask = tf.to_tensor(mask).unsqueeze(0).cuda()
+        harmonized = tf.to_tensor(harmonized_np).unsqueeze(0).cuda()
+        real = tf.to_tensor(real_np).unsqueeze(0).cuda()
 
         fore_area = torch.sum(mask)
         fmse_score = torch.nn.functional.mse_loss(harmonized*mask,real*mask)*256*256/fore_area #计算得到fmse        
+        fmse_score = fmse_score.item()
+
         fpsnr_score = 10 * np.log10((255 ** 2) / fmse_score) #计算得到fpsnr
         
         ssim_score, fssim_score = pytorch_ssim.ssim(harmonized, real, window_size=ssim_window_default_size, mask=mask) #计算得到fssim
