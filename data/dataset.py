@@ -251,3 +251,114 @@ class HarmonizationTestDataset(data.Dataset):
 
     def __len__(self):
         return len(self.imgs)
+
+
+
+class RestorationTrainDataset(data.Dataset):
+    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[256, 256], loader=pil_loader):
+        imgs = make_dataset(data_root)
+        if data_len > 0:
+            self.imgs = imgs[:int(data_len)]
+        else:
+            self.imgs = imgs
+        self.tfs = transforms.Compose([
+                transforms.Resize((image_size[0], image_size[1])),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+        self.loader = loader
+        self.image_size = image_size
+        
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+
+    def __getitem__(self, index):
+        ret = {}
+        path = self.imgs[index]
+        name_parts=path.split('_')
+        mask_path = self.imgs[index].replace('composite_images_train','masks') # #修改点5，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        mask_path = mask_path.replace(('_'+name_parts[-1]),'.png')
+        target_path = self.imgs[index].replace('composite_images_train','composite_images_train_without_noise') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
+
+        comp = Image.open(path).convert('RGB')
+        real = Image.open(target_path).convert('RGB')
+        mask = Image.open(mask_path).convert('1')
+
+        comp = tf.resize(comp, [self.image_size[0], self.image_size[1]])
+        mask = tf.resize(mask, [self.image_size[0], self.image_size[1]])
+        #mask = tf.resize(mask, [224, 224]) #对MAE训练，需要将这里修改为224,224
+        real = tf.resize(real,[self.image_size[0],self.image_size[1]])
+
+        #apply the same transform to composite and real images
+        comp = self.transform(comp)
+        #mask = self.mask_transform(mask)
+        mask = tf.to_tensor(mask)
+
+        real = self.transform(real)
+
+        ret['gt_image'] = real
+        ret['cond_image'] = comp
+        ret['mask'] = mask
+        ret['path'] = path.rsplit("/")[-1]
+
+        return ret
+
+    def __len__(self):
+        return len(self.imgs)
+
+
+class RestorationTestDataset(data.Dataset):
+    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[256, 256], loader=pil_loader):
+        imgs = make_dataset(data_root)
+        if data_len > 0:
+            self.imgs = imgs[:int(data_len)]
+        else:
+            self.imgs = imgs
+        self.tfs = transforms.Compose([
+                transforms.Resize((image_size[0], image_size[1])),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+        self.loader = loader
+        self.image_size = image_size
+        
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+
+    def __getitem__(self, index):
+        ret = {}
+        path = self.imgs[index]
+        name_parts=path.split('_')
+        mask_path = self.imgs[index].replace('composite_images_test','masks') # #修改点5，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        mask_path = mask_path.replace(('_'+name_parts[-1]),'.png')
+        target_path = self.imgs[index].replace('composite_images_test','composite_images_test_without_noise') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
+
+        comp = Image.open(path).convert('RGB')
+        real = Image.open(target_path).convert('RGB')
+        mask = Image.open(mask_path).convert('1')
+
+        comp = tf.resize(comp, [self.image_size[0], self.image_size[1]])
+        mask = tf.resize(mask, [self.image_size[0], self.image_size[1]])
+        #mask = tf.resize(mask, [224, 224]) #对MAE训练，需要将这里修改为224,224
+        real = tf.resize(real,[self.image_size[0],self.image_size[1]])
+
+        #apply the same transform to composite and real images
+        comp = self.transform(comp)
+        #mask = self.mask_transform(mask)
+        mask = tf.to_tensor(mask)
+
+        real = self.transform(real)
+
+        ret['gt_image'] = real
+        ret['cond_image'] = comp
+        ret['mask'] = mask
+        ret['path'] = path.rsplit("/")[-1]
+
+        return ret
+
+    def __len__(self):
+        return len(self.imgs)

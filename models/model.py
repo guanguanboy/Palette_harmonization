@@ -77,10 +77,7 @@ class Palette(BaseModel):
     def save_current_results(self):
         ret_path = []
         ret_result = []
-        print('self.output.shape=', self.output.shape)
         for idx in range(self.batch_size):
-            print('batch_size:', self.batch_size)
-            print('idx:',idx)
             ret_path.append('In_{}'.format(self.path[idx]))
             ret_result.append(self.gt_image[idx].detach().float().cpu())
 
