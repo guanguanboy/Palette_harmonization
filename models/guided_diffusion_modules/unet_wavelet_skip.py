@@ -13,6 +13,115 @@ from .nn import (
     gamma_embedding
 )
 
+"""
+如下是wavelet的相关代码
+"""
+import math
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch.autograd import Variable
+
+
+#def shuffle_channel()
+
+# 使用哈尔 haar 小波变换来实现二维离散小波
+def dwt_init(x):
+
+    x01 = x[:, :, 0::2, :] / 2
+    x02 = x[:, :, 1::2, :] / 2
+    x1 = x01[:, :, :, 0::2]
+    x2 = x02[:, :, :, 0::2]
+    x3 = x01[:, :, :, 1::2]
+    x4 = x02[:, :, :, 1::2]
+    x_LL = x1 + x2 + x3 + x4
+    x_HL = -x1 - x2 + x3 + x4
+    x_LH = -x1 + x2 - x3 + x4
+    x_HH = x1 - x2 - x3 + x4
+
+    return torch.cat((x_LL, x_HL, x_LH, x_HH), 1) #dwt操作会输出四个子band，所有子band会在通道维concat起来。
+
+
+# 使用哈尔 haar 小波变换来实现二维离散小波
+def iwt_init(x):
+    r = 2
+    in_batch, in_channel, in_height, in_width = x.size()
+    #print([in_batch, in_channel, in_height, in_width])
+    out_batch, out_channel, out_height, out_width = in_batch, int(
+        in_channel / (r**2)), r * in_height, r * in_width
+    x1 = x[:, 0:out_channel, :, :] / 2
+    x2 = x[:, out_channel:out_channel * 2, :, :] / 2
+    x3 = x[:, out_channel * 2:out_channel * 3, :, :] / 2
+    x4 = x[:, out_channel * 3:out_channel * 4, :, :] / 2
+
+    h = torch.zeros([out_batch, out_channel, out_height,
+                     out_width]).float().cuda()
+
+    h[:, :, 0::2, 0::2] = x1 - x2 - x3 + x4
+    h[:, :, 1::2, 0::2] = x1 - x2 + x3 - x4
+    h[:, :, 0::2, 1::2] = x1 + x2 - x3 - x4
+    h[:, :, 1::2, 1::2] = x1 + x2 + x3 + x4
+
+    return h
+
+
+# 二维离散小波
+class DWT(nn.Module):
+    def __init__(self):
+        super(DWT, self).__init__()
+        self.requires_grad = False  # 信号处理，非卷积运算，不需要进行梯度求导
+
+    def forward(self, x):
+        return dwt_init(x)
+
+
+# 逆向二维离散小波
+class IWT(nn.Module):
+    def __init__(self):
+        super(IWT, self).__init__()
+        self.requires_grad = False
+
+    def forward(self, x):
+        return iwt_init(x)
+
+# 使用哈尔 haar 小波变换来实现二维离散小波
+def high_iwt_init(x):
+    r = 2
+    in_batch, in_channel, in_height, in_width = x.size()
+    #print([in_batch, in_channel, in_height, in_width])
+    out_batch, out_channel, out_height, out_width = in_batch, int(
+        in_channel / (r**2)), r * in_height, r * in_width
+    x1 = x[:, 0:out_channel, :, :] / 2
+    x2 = x[:, out_channel:out_channel * 2, :, :] / 2
+    x3 = x[:, out_channel * 2:out_channel * 3, :, :] / 2
+    x4 = x[:, out_channel * 3:out_channel * 4, :, :] / 2
+
+    h = torch.zeros([out_batch, out_channel, out_height,
+                     out_width]).float().cuda()
+
+    h[:, :, 0::2, 0::2] = - x2 - x3 + x4
+    h[:, :, 1::2, 0::2] = - x2 + x3 - x4
+    h[:, :, 0::2, 1::2] = x2 - x3 - x4
+    h[:, :, 1::2, 1::2] = x2 + x3 + x4
+
+    return h
+    
+# 逆向二维离散小波
+class HIGHIWT(nn.Module):
+    def __init__(self):
+        super(HIGHIWT, self).__init__()
+        self.requires_grad = False
+
+    def forward(self, x):
+        return high_iwt_init(x)
+
+
+"""
+
+
+"""
 class SiLU(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
@@ -544,6 +653,9 @@ class UNet(nn.Module):
             zero_module(nn.Conv2d(input_ch, out_channel, 3, padding=1)),
         )
 
+        self.dwt = DWT()  # 二维离散小波
+        self.iwt = HIGHIWT()  # 逆向的二维离散小波
+
     def forward(self, x, gammas):
         """
         Apply the model to an input batch.
@@ -552,6 +664,7 @@ class UNet(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
         hs = []
+        hs_wavelet = []
         gammas = gammas.view(-1, )
         emb = self.cond_embed(gamma_embedding(gammas, self.inner_channel))
 
@@ -561,14 +674,17 @@ class UNet(nn.Module):
         for module in self.input_blocks:
             h = module(h, emb)
             hs.append(h) #将encoder部分的module的输出给保存起来
+            hs_wavelet.append(self.iwt(self.dwt(h)))
             #print("input module")
+
+        #这里将hs中的向量，全部提取wavelet高频特征，然后将结果保存到hs_high中
 
         h = self.middle_block(h, emb)
         output_count = 1
         out_indx = 0
         for module in self.output_blocks:
             #print("output module", module)
-            h = torch.cat([h, hs.pop()], dim=1)
+            h = torch.cat([h, hs_wavelet.pop()], dim=1)
             h = module(h, emb)
 
             if output_count < 10 and output_count % 3 == 2:

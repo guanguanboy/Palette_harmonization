@@ -19,6 +19,10 @@ class Network(BaseNetwork):
         elif module_name == 'transformer':
             from .transformer_modules.timeswinir import TimeSwinIR
             self.denoise_fn = TimeSwinIR(**unet) #去噪模型是一个u-net
+
+        elif module_name == 'wavelet':
+            from .wavelet.mwcnn import UNet
+            self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
         self.beta_schedule = beta_schedule
 
     def set_loss(self, loss_fn):
@@ -79,11 +83,11 @@ class Network(BaseNetwork):
         if clip_denoised:
             y_0_hat.clamp_(-1., 1.)
 
-        model_mean, posterior_log_variance = self.q_posterior(
+        model_mean, posterior_log_variance = self.q_posterior( #套公式计算均值和方差
             y_0_hat=y_0_hat, y_t=y_t, t=t)
         return model_mean, posterior_log_variance
 
-    def q_sample(self, y_0, sample_gammas, noise=None):
+    def q_sample(self, y_0, sample_gammas, noise=None): #计算扩散过程中任意时刻y_t的采样值，直接套公式
         noise = default(noise, lambda: torch.randn_like(y_0))
         return (
             sample_gammas.sqrt() * y_0 +
@@ -91,14 +95,14 @@ class Network(BaseNetwork):
         )
 
     @torch.no_grad()
-    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None):
-        model_mean, model_log_variance = self.p_mean_variance(
+    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None): #从y_t采样t时刻的重构值
+        model_mean, model_log_variance = self.p_mean_variance( #计算均值和方差
             y_t=y_t, t=t, clip_denoised=clip_denoised, y_cond=y_cond)
-        noise = torch.randn_like(y_t) if any(t>0) else torch.zeros_like(y_t)
+        noise = torch.randn_like(y_t) if any(t>0) else torch.zeros_like(y_t) #生成正太分布的随机量
         return model_mean + noise * (0.5 * model_log_variance).exp()
 
     @torch.no_grad()
-    def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8):
+    def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8): #采样过程
         b, *_ = y_cond.shape
 
         assert self.num_timesteps > sample_num, 'num_timesteps must greater than sample_num'
@@ -108,17 +112,17 @@ class Network(BaseNetwork):
         ret_arr = y_t
         for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
             t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
-            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t
+            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
             if mask is not None:
                 y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
             if i % sample_inter == 0:
                 ret_arr = torch.cat([ret_arr, y_t], dim=0)
         return y_t, ret_arr
 
-    def forward(self, y_0, y_cond=None, mask=None, noise=None):
+    def forward(self, y_0, y_cond=None, mask=None, noise=None): #参数顺序，真实图片，合成图片(条件图片)以及mask
         # sampling from p(gammas)
         b, *_ = y_0.shape
-        t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long()
+        t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long() #随机生成一个时间点
         gamma_t1 = extract(self.gammas, t-1, x_shape=(1, 1))
         sqrt_gamma_t2 = extract(self.gammas, t, x_shape=(1, 1))
         sample_gammas = (sqrt_gamma_t2-gamma_t1) * torch.rand((b, 1), device=y_0.device) + gamma_t1
@@ -126,11 +130,11 @@ class Network(BaseNetwork):
 
         noise = default(noise, lambda: torch.randn_like(y_0))
         y_noisy = self.q_sample(
-            y_0=y_0, sample_gammas=sample_gammas.view(-1, 1, 1, 1), noise=noise)
+            y_0=y_0, sample_gammas=sample_gammas.view(-1, 1, 1, 1), noise=noise) #逐渐的给目标图像增加高斯噪声
 
         if mask is not None: #如果包含mask，则去噪的时候，将随机噪声y_noisy*mask+真实图片*（1-mask）作为一个输入
             noise_hat = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), sample_gammas)
-            loss = self.loss_fn(mask*noise, mask*noise_hat) #计算loss的时候，只计算mask部分
+            loss = self.loss_fn(mask*noise, mask*noise_hat) #计算loss的时候，只计算mask部分 #diffusion model中逆扩散过程的loss。让denoise_fn网络输出的东西，尽可能去比较高斯噪声
         else:
             noise_hat = self.denoise_fn(torch.cat([y_cond, y_noisy], dim=1), sample_gammas)
             loss = self.loss_fn(noise, noise_hat)

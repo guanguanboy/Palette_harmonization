@@ -39,7 +39,7 @@ class Network(BaseNetwork):
             self.denoise_fn = TimeSwinIR(**unet) #去噪模型是一个u-net
 
         elif module_name == 'wavelet':
-            from .wavelet.mwcnn import UNet
+            from .guided_diffusion_modules.unet_wavelet_skip import UNet
             self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
         self.beta_schedule = beta_schedule
 

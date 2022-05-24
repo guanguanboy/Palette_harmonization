@@ -57,9 +57,9 @@ class Palette(BaseModel):
         
     def set_input(self, data):
         ''' must use set_device in tensor '''
-        self.cond_image = self.set_device(data.get('cond_image'))
-        self.gt_image = self.set_device(data.get('gt_image'))
-        self.mask = self.set_device(data.get('mask'))
+        self.cond_image = self.set_device(data.get('cond_image')) #条件图像，合成图像
+        self.gt_image = self.set_device(data.get('gt_image')) #真实图像
+        self.mask = self.set_device(data.get('mask')) #掩码图像
         self.path = data['path']
     
     def get_current_visuals(self, phase='train'):
@@ -96,7 +96,7 @@ class Palette(BaseModel):
         for train_data in tqdm.tqdm(self.phase_loader):
             self.set_input(train_data)
             self.optG.zero_grad()
-            loss = self.netG(self.gt_image, self.cond_image, mask=self.mask) #输入分别是真实图片，条件图片和掩码
+            loss = self.netG(self.gt_image, self.cond_image, mask=self.mask) #输入分别是真实图片，条件图片（合成图片）和掩码
             loss.backward()
             self.optG.step()
 
