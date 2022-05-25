@@ -41,6 +41,9 @@ class Network(BaseNetwork):
         elif module_name == 'wavelet':
             from .guided_diffusion_modules.unet_wavelet_skip import UNet
             self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
+        elif module_name == 'focal':
+            from .guided_diffusion_modules.unet_modified_focal_attn import UNet
+            self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
         self.beta_schedule = beta_schedule
 
     def set_loss(self, loss_fn):
