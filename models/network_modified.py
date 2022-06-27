@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from core.base_network import BaseNetwork
 from torchvision.transforms import Resize
+import torch.nn.functional as F
 
 def resize_tensor(input_tensor):
     width=input_tensor.shape[2]
@@ -44,6 +45,10 @@ class Network(BaseNetwork):
         elif module_name == 'focal':
             from .guided_diffusion_modules.unet_modified_focal_attn import UNet
             self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
+        elif module_name == 'noise_level_estimation':
+            from .guided_diffusion_modules.unet_modified_with_est import UNet
+            self.denoise_fn = UNet(**unet)
+
         self.beta_schedule = beta_schedule
 
     def set_loss(self, loss_fn):
@@ -140,7 +145,7 @@ class Network(BaseNetwork):
                 ret_arr = torch.cat([ret_arr, y_t], dim=0)
         return y_t, ret_arr
 
-    def forward(self, y_0, y_cond=None, mask=None, noise=None): #参数顺序，真实图片，合成图片(条件图片)以及mask
+    def forward(self, y_0, y_cond=None, mask=None, noise=None): #参数顺序，真实图片y_0，合成图片(条件图片y_cond)以及mask
         # sampling from p(gammas)
         b, *_ = y_0.shape
         t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long() #随机生成一个时间点
@@ -159,9 +164,10 @@ class Network(BaseNetwork):
 
         loss = 0
         if mask is not None: #如果包含mask，则去噪的时候，将随机噪声y_noisy*mask+真实图片*（1-mask）作为一个输入
-            noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), sample_gammas)
+            noise_level, noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), mask, sample_gammas)
             #print(len(noise_resized_list), len(mask_resized_list),len(noise_hat_list))
 
+            loss += F.mse_loss(noise_level*mask, y_0*mask) #for noise estimation
             for i in range(len(noise_hat_list)):
                 loss += self.loss_fn(mask_resized_list[i]*noise_resized_list[i], mask_resized_list[i]*noise_hat_list[i])
         else:

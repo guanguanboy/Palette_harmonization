@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nn import (
+from .nn import (
     checkpoint,
     zero_module,
     normalization,
@@ -241,13 +241,13 @@ class AttentionBlock(nn.Module):
     def forward(self, x):
         return checkpoint(self._forward, (x,), self.parameters(), True)
 
-    def _forward(self, x): #torch.Size([3, 512, 8, 8])
+    def _forward(self, x):
         b, c, *spatial = x.shape
-        x = x.reshape(b, c, -1) #torch.Size([3, 512, 64])
-        qkv = self.qkv(self.norm(x)) #qkv torch.Size([3, 1536, 64])
-        h = self.attention(qkv) #h torch.Size([3, 512, 64])
-        h = self.proj_out(h)  #torch.Size([3, 512, 64])
-        return (x + h).reshape(b, c, *spatial) #将x与注意力加起来
+        x = x.reshape(b, c, -1)
+        qkv = self.qkv(self.norm(x))
+        h = self.attention(qkv)
+        h = self.proj_out(h)
+        return (x + h).reshape(b, c, *spatial)
 
 
 class QKVAttentionLegacy(nn.Module):
@@ -390,6 +390,8 @@ class UNet(nn.Module):
             nn.Linear(cond_embed_dim, cond_embed_dim),
         )
 
+        self.out_list = []
+
         ch = input_ch = int(channel_mults[0] * inner_channel)
         self.input_blocks = nn.ModuleList(
             [EmbedSequential(nn.Conv2d(in_channel, ch, 3, padding=1))]
@@ -397,8 +399,8 @@ class UNet(nn.Module):
         self._feature_size = ch
         input_block_chans = [ch]
         ds = 1
-        for level, mult in enumerate(channel_mults):
-            for _ in range(res_blocks):
+        for level, mult in enumerate(channel_mults): #channel乘数[值分别为1，2，4，8]
+            for _ in range(res_blocks): #res_blocks == 2
                 layers = [
                     ResBlock(
                         ch,
@@ -410,7 +412,7 @@ class UNet(nn.Module):
                     )
                 ]
                 ch = int(mult * inner_channel)
-                if ds in attn_res:
+                if ds in attn_res: #attn_res=[8] 第四次for判断的时候ds的值会是8，会走这个分支
                     layers.append(
                         AttentionBlock(
                             ch,
@@ -423,7 +425,7 @@ class UNet(nn.Module):
                 self.input_blocks.append(EmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
-            if level != len(channel_mults) - 1:
+            if level != len(channel_mults) - 1: #添加下采样层
                 out_ch = ch
                 self.input_blocks.append(
                     EmbedSequential(
@@ -436,7 +438,7 @@ class UNet(nn.Module):
                             use_scale_shift_norm=use_scale_shift_norm,
                             down=True,
                         )
-                        if resblock_updown
+                        if resblock_updown #使用residual block做上采样或者下采样
                         else Downsample(
                             ch, conv_resample, out_channel=out_ch
                         )
@@ -473,7 +475,7 @@ class UNet(nn.Module):
         self._feature_size += ch
 
         self.output_blocks = nn.ModuleList([])
-        for level, mult in list(enumerate(channel_mults))[::-1]:
+        for level, mult in list(enumerate(channel_mults))[::-1]: #从level=3 multi=8 开始
             for i in range(res_blocks + 1):
                 ich = input_block_chans.pop()
                 layers = [
@@ -486,7 +488,7 @@ class UNet(nn.Module):
                         use_scale_shift_norm=use_scale_shift_norm,
                     )
                 ]
-                ch = int(inner_channel * mult)
+                ch = int(inner_channel * mult) #ch会在这里变化
                 if ds in attn_res:
                     layers.append(
                         AttentionBlock(
@@ -515,6 +517,26 @@ class UNet(nn.Module):
                     ds //= 2
                 self.output_blocks.append(EmbedSequential(*layers))
                 self._feature_size += ch
+            
+            #给每个level增加一个输出
+        self.level3 = nn.Sequential(
+            normalization(inner_channel*channel_mults[-1]),
+            SiLU(),
+            zero_module(nn.Conv2d(inner_channel*channel_mults[-1], out_channel, 3, padding=1)),)
+
+        self.level2 = nn.Sequential(
+            normalization(inner_channel*channel_mults[-2]),
+            SiLU(),
+            zero_module(nn.Conv2d(inner_channel*channel_mults[-2], out_channel, 3, padding=1)),)
+
+        self.level1 = nn.Sequential(
+            normalization(inner_channel*channel_mults[-3]),
+            SiLU(),
+            zero_module(nn.Conv2d(inner_channel*channel_mults[-3], out_channel, 3, padding=1)),)
+
+        self.out_list.append(self.level3)
+        self.out_list.append(self.level2)
+        self.out_list.append(self.level1)
 
         self.out = nn.Sequential(
             normalization(ch),
@@ -522,40 +544,93 @@ class UNet(nn.Module):
             zero_module(nn.Conv2d(input_ch, out_channel, 3, padding=1)),
         )
 
-    def forward(self, x, gammas):
+        self.estimation_net = FCN()
+
+    def forward(self, x, mask, gammas):
         """
         Apply the model to an input batch.
         :param x: an [N x 2 x ...] Tensor of inputs (B&W)
         :param gammas: a 1-D batch of gammas.
         :return: an [N x C x ...] Tensor of outputs.
         """
+        #print('x.shape=', x.shape)
+        #print('x first 3 channel=', x[:,0:3,:,:].shape) #前三个通道是退化掉的合成图像
+        noise_level = self.estimation_net(x[:,0:3,:,:], mask) #
+
         hs = []
         gammas = gammas.view(-1, )
         emb = self.cond_embed(gamma_embedding(gammas, self.inner_channel))
 
-        h = x.type(torch.float32)
+        output = []
+        #output.append(noise_level)
+
+        x_est = torch.cat([x, noise_level], dim=1)
+
+        h = x_est.type(torch.float32)
         for module in self.input_blocks:
             h = module(h, emb)
-            hs.append(h)
+            hs.append(h) #将encoder部分的module的输出给保存起来
+            #print("input module")
+
         h = self.middle_block(h, emb)
+        output_count = 1
+        out_indx = 0
         for module in self.output_blocks:
+            #print("output module", module)
             h = torch.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
+
+            if output_count < 10 and output_count % 3 == 2:
+                h = h.type(x.dtype)
+                res = self.out_list[out_indx](h)
+                output.append(res)
+                out_indx +=1
+
+            output_count +=1
+
         h = h.type(x.dtype)
-        return self.out(h)
+        output.append(self.out(h))
+        return noise_level, output
+
+class FCN(nn.Module):
+    def __init__(self):
+        super(FCN, self).__init__()
+        self.fcn = nn.Sequential(
+            nn.Conv2d(4, 32, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 3, 3, padding=1),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x, mask):
+        x_mask = torch.cat([x, mask], dim=1)
+        return self.fcn(x_mask)
+
 
 if __name__ == '__main__':
     b, c, h, w = 3, 6, 64, 64
     timsteps = 100
     model = UNet(
         image_size=h,
-        in_channel=c,
+        in_channel=c+3,
         inner_channel=64,
         out_channel=3,
         res_blocks=2,
         attn_res=[8]
-    )
-    x = torch.randn((b, c, h, w))
-    emb = torch.ones((b, ))
-    out = model(x, emb)
-    print(out.shape)
+    ).cuda()
+    x = torch.randn((b, c, h, w)).cuda()
+    emb = torch.ones((b, )).cuda()
+    mask = torch.randn((b, 1, h, w)).cuda()
+
+    noise_level, out = model(x, mask, emb)
+    print(out[-1].shape) #torch.Size([3, 3, 64, 64])
+    print(out[-2].shape) #([3, 3, 32, 32])
+    print(out[-3].shape) #torch.Size([3, 3, 16, 16])
+    print(out[-4].shape) #torch.Size([3, 3, 8, 8])
+    print(noise_level.shape) #noise_level torch.Size([3, 3, 64, 64])
