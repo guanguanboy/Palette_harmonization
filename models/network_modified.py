@@ -101,10 +101,11 @@ class Network(BaseNetwork):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, y_t.shape)
         return posterior_mean, posterior_log_variance_clipped
 
-    def p_mean_variance(self, y_t, t, clip_denoised: bool, y_cond=None):
+    def p_mean_variance(self, y_t, t, clip_denoised: bool, y_cond=None, mask=None):
         noise_level = extract(self.gammas, t, x_shape=(1, 1)).to(y_t.device)
+        _, predicted_noise = self.denoise_fn(torch.cat([y_cond, y_t], dim=1), mask, noise_level)
         y_0_hat = self.predict_start_from_noise(
-                y_t, t=t, noise=self.denoise_fn(torch.cat([y_cond, y_t], dim=1), noise_level)[-1]) #加-1是为了使用deep supervison
+                y_t, t=t, noise=predicted_noise[-1]) #加-1是为了使用deep supervison
 
         if clip_denoised:
             y_0_hat.clamp_(-1., 1.)
@@ -121,9 +122,9 @@ class Network(BaseNetwork):
         )
 
     @torch.no_grad()
-    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None): #从y_t采样t时刻的重构值
+    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None, mask=None): #从y_t采样t时刻的重构值
         model_mean, model_log_variance = self.p_mean_variance( #计算均值和方差
-            y_t=y_t, t=t, clip_denoised=clip_denoised, y_cond=y_cond)
+            y_t=y_t, t=t, clip_denoised=clip_denoised, y_cond=y_cond, mask=mask)
         noise = torch.randn_like(y_t) if any(t>0) else torch.zeros_like(y_t) #生成正太分布的随机量
         return model_mean + noise * (0.5 * model_log_variance).exp()
 
@@ -138,7 +139,7 @@ class Network(BaseNetwork):
         ret_arr = y_t
         for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
             t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
-            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
+            y_t = self.p_sample(y_t, t, y_cond=y_cond, mask=mask) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
             if mask is not None:
                 y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
             if i % sample_inter == 0:
@@ -163,11 +164,12 @@ class Network(BaseNetwork):
         mask_resized_list = resize_tensor(mask)
 
         loss = 0
+        noise_level_gt = torch.ones_like(y_0)*0.25
         if mask is not None: #如果包含mask，则去噪的时候，将随机噪声y_noisy*mask+真实图片*（1-mask）作为一个输入
             noise_level, noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), mask, sample_gammas)
             #print(len(noise_resized_list), len(mask_resized_list),len(noise_hat_list))
 
-            loss += F.mse_loss(noise_level*mask, y_0*mask) #for noise estimation
+            loss += 0.2 * (F.mse_loss(noise_level*mask, noise_level_gt*mask)) #for noise estimation
             for i in range(len(noise_hat_list)):
                 loss += self.loss_fn(mask_resized_list[i]*noise_resized_list[i], mask_resized_list[i]*noise_hat_list[i])
         else:
