@@ -165,10 +165,10 @@ class Network(BaseNetwork):
 
         loss = 0
         if mask is not None: #如果包含mask，则去噪的时候，将随机噪声y_noisy*mask+真实图片*（1-mask）作为一个输入
-            noise_level, noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), mask, sample_gammas)
+            #noise_level, noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), mask, sample_gammas)
             #print(len(noise_resized_list), len(mask_resized_list),len(noise_hat_list))
-
-            loss += F.mse_loss(noise_level*mask, y_0*mask) #for noise estimation
+            noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), sample_gammas)
+            #loss += F.mse_loss(noise_level*mask, y_0*mask) #for noise estimation
             for i in range(len(noise_hat_list)):
                 loss += self.loss_fn(mask_resized_list[i]*noise_resized_list[i], mask_resized_list[i]*noise_hat_list[i])
         else:
