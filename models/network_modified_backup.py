@@ -103,9 +103,9 @@ class Network(BaseNetwork):
 
     def p_mean_variance(self, y_t, t, clip_denoised: bool, y_cond=None):
         noise_level = extract(self.gammas, t, x_shape=(1, 1)).to(y_t.device)
-        _, predicted_noise = self.denoise_fn(torch.cat([y_cond, y_t], dim=1), noise_level)[-1]
+        predicted_noise = self.denoise_fn(torch.cat([y_cond, y_t], dim=1), noise_level)
         y_0_hat = self.predict_start_from_noise(
-                y_t, t=t, noise=predicted_noise) #加-1是为了使用deep supervison
+                y_t, t=t, noise=predicted_noise[-1]) #加-1是为了使用deep supervison
 
         if clip_denoised:
             y_0_hat.clamp_(-1., 1.)
