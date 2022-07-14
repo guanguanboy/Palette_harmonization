@@ -52,6 +52,9 @@ class Network(BaseNetwork):
         elif module_name == 'noise_level_estimation':
             from .guided_diffusion_modules.unet_modified_with_est import UNet
             self.denoise_fn = UNet(**unet)
+        elif module_name == 'improved':
+            from .guided_diffusion_modules.unet import UNet
+            self.denoise_fn = UNet(**unet)
 
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
@@ -95,17 +98,21 @@ class Network(BaseNetwork):
 
 
     @torch.no_grad()
-    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None, mask=None): #从y_t采样t时刻的重构值
+    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None): #从y_t采样t时刻的重构值
         # Pack the tokens together into model kwargs. 用字典来保存模型参数，提高了模型接口的可扩展性
         model_kwargs = dict(
 
-            mask=mask,#torch.Size([2, 128])
+            #mask=mask,#torch.Size([2, 128])
 
             # Masked inpainting image
             y_cond=y_cond,
             #inpaint_mask=source_mask_64.repeat(full_batch_size, 1, 1, 1).to(device),
         )
+
+        #需要在这里把相关的参数给整理好
+
         out = self.spaced_dpm.p_sample(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+        
         image = out["sample"]
 
         return image
@@ -121,7 +128,7 @@ class Network(BaseNetwork):
         ret_arr = y_t
         for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
             t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
-            y_t = self.p_sample(y_t, t, y_cond=y_cond, mask=mask) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
+            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
             if mask is not None:
                 y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
             if i % sample_inter == 0:
