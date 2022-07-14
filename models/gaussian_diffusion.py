@@ -274,7 +274,12 @@ class GaussianDiffusion:
 
         B, C = x.shape[:2]
         assert t.shape == (B,)
-        model_output = model(x, t, **model_kwargs)
+
+        #在这里将y_cond从model_kwargs中取出来，与x进行cat传入model中
+        y_cond = model_kwargs['y_cond']
+        new_x = th.cat([y_cond, x], dim=1)
+
+        model_output = model(new_x, t)
         if isinstance(model_output, tuple):
             model_output, extra = model_output
         else:
@@ -743,7 +748,7 @@ class GaussianDiffusion:
             ##把model_kwargs中的mask和y_cond取出来，cat起来传输到模型中，然后model_kwargs给赋值为空传入模型就行了。
             y_cond = model_kwargs['y_cond']
             mask = model_kwargs['mask']
-            new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start])
+            new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
             model_output = model(new_st, self._scale_timesteps(t)) #output的shape是（2，6，64，64），前三个通道是epsilong噪声，后三个通道是方差
 
             if self.model_var_type in [
@@ -762,6 +767,7 @@ class GaussianDiffusion:
                     x_t=x_t, #加了噪声的图像
                     t=t,
                     clip_denoised=False,
+                    model_kwargs = model_kwargs
                 )["output"]
                 if self.loss_type == LossType.RESCALED_MSE:
                     # Divide by 1000 for equivalence with initial implementation.

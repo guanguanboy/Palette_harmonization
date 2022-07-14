@@ -96,7 +96,13 @@ class Palette(BaseModel):
         for train_data in tqdm.tqdm(self.phase_loader):
             self.set_input(train_data)
             self.optG.zero_grad()
-            loss = self.netG(self.gt_image, self.cond_image, mask=self.mask) #输入分别是真实图片，条件图片（合成图片）和掩码
+            
+            #for original ddpm
+            #loss = self.netG(self.gt_image, self.cond_image, mask=self.mask) #输入分别是真实图片，条件图片（合成图片）和掩码
+            #for improved ddpm
+            losses = self.netG(self.gt_image, self.cond_image, mask=self.mask) #输入分别是真实图片，条件图片（合成图片）和掩码
+            loss = (losses["loss"]).mean()
+
             loss.backward()
             self.optG.step()
 
