@@ -58,9 +58,11 @@ class Network(BaseNetwork):
 
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
+        self.time_step_respacing = beta_schedule['test']['n_timestep']
+
         print(self.num_timesteps)
 
-        self.spaced_dpm = self._create_gaussian_diffusion(steps=1000, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.num_timesteps))
+        self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.time_step_respacing))
 
     def _create_gaussian_diffusion(self, steps, noise_schedule, timestep_respacing):
         betas = get_named_beta_schedule(noise_schedule, steps)
@@ -121,12 +123,12 @@ class Network(BaseNetwork):
     def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8): #采样过程，类似于IDDPM中的源码p_sample_loop
         b, *_ = y_cond.shape
 
-        assert self.num_timesteps > sample_num, 'num_timesteps must greater than sample_num'
-        sample_inter = (self.num_timesteps//sample_num)
+        assert self.time_step_respacing > sample_num, 'num_timesteps must greater than sample_num'
+        sample_inter = (self.time_step_respacing//sample_num)
         
         y_t = default(y_t, lambda: torch.randn_like(y_cond))
         ret_arr = y_t
-        for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
+        for i in tqdm(reversed(range(0, self.time_step_respacing)), desc='sampling loop time step', total=self.time_step_respacing):
             t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
             y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
             if mask is not None:
@@ -140,7 +142,7 @@ class Network(BaseNetwork):
         
         ###构造t
         b, *_ = y_0.shape
-        t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long() #随机生成一个时间点
+        t = torch.randint(1, self.time_step_respacing, (b,), device=y_0.device).long() #随机生成一个时间点
 
         #构造可变参数
         model_kwargs = dict(

@@ -748,8 +748,9 @@ class GaussianDiffusion:
             ##把model_kwargs中的mask和y_cond取出来，cat起来传输到模型中，然后model_kwargs给赋值为空传入模型就行了。
             y_cond = model_kwargs['y_cond']
             mask = model_kwargs['mask']
-            new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
-            model_output = model(new_st, self._scale_timesteps(t)) #output的shape是（2，6，64，64），前三个通道是epsilong噪声，后三个通道是方差
+            #new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
+            new_st = th.cat([y_cond, x_t], dim=1)
+            model_output = model(new_st, t) #output的shape是（2，6，64，64），前三个通道是epsilong噪声，后三个通道是方差
 
             if self.model_var_type in [
                 ModelVarType.LEARNED,
