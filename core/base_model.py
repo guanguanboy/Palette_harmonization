@@ -5,7 +5,7 @@ import collections
 
 import torch
 import torch.nn as nn
-
+import numpy as np
 import core.util as Util
 from core.logger import LogTracker
 CustomResult = collections.namedtuple('CustomResult', 'name result')
@@ -32,6 +32,8 @@ class BaseModel():
         self.results_dict = CustomResult([],[]) # {"name":[], "result":[]}
 
     def train(self):
+        loss_list = []
+
         while self.epoch <= self.opt['train']['n_epoch'] and self.iter <= self.opt['train']['n_iter']: #两个条件同时成立才进行下一次训练，有一个不成立就终止训练
             self.epoch += 1
             if self.opt['distributed']:
@@ -46,6 +48,8 @@ class BaseModel():
             ''' print logged informations to the screen and tensorboard ''' 
             for key, value in train_log.items():
                 self.logger.info('{:5s}: {}\t'.format(str(key), value))
+                if key == 'train/l1_loss':
+                    loss_list.append(value)
             
             if self.epoch % self.opt['train']['save_checkpoint_epoch'] == 0:
                 self.logger.info('Saving the self at the end of epoch {:.0f}'.format(self.epoch))
@@ -61,6 +65,8 @@ class BaseModel():
                         self.logger.info('{:5s}: {}\t'.format(str(key), value))
                 self.logger.info("\n------------------------------Validation End------------------------------\n\n")
         self.logger.info('Number of Epochs has reached the limit, End.')
+        loss_list_numpy = np.array(loss_list)
+        np.save(os.path.join(self.opt['path']['checkpoint'], "loss_per_epoch.npy"), loss_list_numpy)    
 
     def test(self):
         pass
