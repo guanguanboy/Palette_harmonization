@@ -56,7 +56,23 @@ class Network(BaseNetwork):
         elif module_name == 'improved':
             from .guided_diffusion_modules.unet import UNet
             self.denoise_fn = UNet(**unet)
-
+        """
+        elif module_name == 'improved_biggan':
+            from .guided_diffusion_modules.unet_improved import UNetModel
+            model_defaults = dict(
+                image_size=256,
+                num_channels=128,
+                num_res_blocks=3,
+                learn_sigma=True,
+                class_cond=False,
+                use_checkpoint=False,
+                attention_resolutions="16,8",
+                num_heads=4,
+                num_heads_upsample=-1,
+                use_scale_shift_norm=True,
+                dropout=0.0,)
+            self.denoise_fn = UNetModel(**model_defaults)
+        """
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
         self.time_step_respacing = beta_schedule['test']['time_step_respacing']
