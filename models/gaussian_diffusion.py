@@ -749,8 +749,8 @@ class GaussianDiffusion:
             ##把model_kwargs中的mask和y_cond取出来，cat起来传输到模型中，然后model_kwargs给赋值为空传入模型就行了。
             y_cond = model_kwargs['y_cond']
             mask = model_kwargs['mask']
-            #new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
-            new_st = th.cat([y_cond, x_t], dim=1)
+            new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
+            #new_st = th.cat([y_cond, x_t], dim=1)
             model_output = model(new_st, t) #output的shape是（2，6，64，64），前三个通道是epsilong噪声，后三个通道是方差
 
             if self.model_var_type in [
@@ -766,7 +766,8 @@ class GaussianDiffusion:
                 terms["vb"] = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: r,
                     x_start=x_start, #原始图像
-                    x_t=x_t, #加了噪声的图像
+                    x_t=x_t, #加了噪声的图像,
+                    #x_t=new_st, #如果是带mask的话，这里应该是new_st
                     t=t,
                     clip_denoised=False,
                     model_kwargs = model_kwargs
@@ -784,7 +785,8 @@ class GaussianDiffusion:
                 ModelMeanType.EPSILON: noise,
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
-            terms["mse"] = mean_flat((target - model_output) ** 2) #做mse loss
+            #terms["mse"] = mean_flat((target - model_output) ** 2) #做mse loss
+            terms["mse"] = mean_flat((target*mask - model_output*mask) ** 2) #做mse loss
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"] #hybrid loss
             else:

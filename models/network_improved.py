@@ -1,4 +1,5 @@
 import math
+from sqlalchemy import null
 import torch
 from inspect import isfunction
 from functools import partial
@@ -58,13 +59,15 @@ class Network(BaseNetwork):
 
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
-        self.time_step_respacing = beta_schedule['test']['n_timestep']
+        self.time_step_respacing = beta_schedule['test']['time_step_respacing']
 
-        print(self.num_timesteps)
+        #print(self.num_timesteps)
+        if not beta_schedule['test']['is_test']:
+            self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2')
+        else:
+            self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.time_step_respacing))
 
-        self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.time_step_respacing))
-
-    def _create_gaussian_diffusion(self, steps, noise_schedule, timestep_respacing):
+    def _create_gaussian_diffusion(self, steps, noise_schedule, timestep_respacing=''):
         betas = get_named_beta_schedule(noise_schedule, steps)
         if not timestep_respacing:
             timestep_respacing = [steps]
@@ -142,7 +145,7 @@ class Network(BaseNetwork):
         
         ###构造t
         b, *_ = y_0.shape
-        t = torch.randint(1, self.time_step_respacing, (b,), device=y_0.device).long() #随机生成一个时间点
+        t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long() #随机生成一个时间点
 
         #构造可变参数
         model_kwargs = dict(
