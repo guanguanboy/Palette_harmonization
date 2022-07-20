@@ -151,9 +151,10 @@ class GaussianDiffusion:
         *,
         betas,
     ):
+        #如下4个参数其实也可以通过参数给传入进去
         self.model_mean_type = ModelMeanType.EPSILON
         self.model_var_type = ModelVarType.LEARNED_RANGE
-        self.loss_type = LossType.RESCALED_MSE
+        self.loss_type = LossType.MSE
         self.rescale_timesteps = True
 
         # Use float64 for accuracy.
@@ -162,7 +163,7 @@ class GaussianDiffusion:
         assert len(betas.shape) == 1, "betas must be 1-D"
         assert (betas > 0).all() and (betas <= 1).all()
 
-        self.num_timesteps = int(betas.shape[0])
+        self.num_timesteps = int(betas.shape[0]) #这里按照betas大小赋值的话，值会变为采样的值。
 
         alphas = 1.0 - betas
         self.alphas_cumprod = np.cumprod(alphas, axis=0)
