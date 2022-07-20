@@ -126,10 +126,10 @@ class Network(BaseNetwork):
         model_mean, model_log_variance = self.p_mean_variance( #计算均值和方差
             y_t=y_t, t=t, clip_denoised=clip_denoised, y_cond=y_cond, mask=mask)
         noise = torch.randn_like(y_t) if any(t>0) else torch.zeros_like(y_t) #生成正太分布的随机量
-        return model_mean + noise * (0.5 * model_log_variance).exp()
+        return model_mean + noise * (0.5 * model_log_variance).exp() #采样得到一张图片
 
     @torch.no_grad()
-    def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8): #采样过程
+    def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8): #采样过程,逆向多次调用p_sample
         b, *_ = y_cond.shape
 
         assert self.num_timesteps > sample_num, 'num_timesteps must greater than sample_num'

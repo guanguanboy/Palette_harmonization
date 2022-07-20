@@ -153,7 +153,7 @@ class Network(BaseNetwork):
         gamma_t1 = extract(self.gammas, t-1, x_shape=(1, 1))
         sqrt_gamma_t2 = extract(self.gammas, t, x_shape=(1, 1))
         sample_gammas = (sqrt_gamma_t2-gamma_t1) * torch.rand((b, 1), device=y_0.device) + gamma_t1
-        sample_gammas = sample_gammas.view(b, -1)
+        sample_gammas = sample_gammas.view(b, -1) #torch.Size([4, 1]) 4是batch_size
 
         noise = default(noise, lambda: torch.randn_like(y_0))
         
