@@ -154,7 +154,7 @@ class GaussianDiffusion:
         #如下4个参数其实也可以通过参数给传入进去
         self.model_mean_type = ModelMeanType.EPSILON
         self.model_var_type = ModelVarType.LEARNED_RANGE
-        self.loss_type = LossType.MSE
+        self.loss_type = LossType.RESCALED_MSE
         self.rescale_timesteps = True
 
         # Use float64 for accuracy.

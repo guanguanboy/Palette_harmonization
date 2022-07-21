@@ -29,6 +29,52 @@ def resize_tensor(input_tensor):
 
     return output_tensor_list
 
+NUM_CLASSES = 1000
+
+from .guided_diffusion_modules.unet_improved import UNetModel
+
+def create_model(
+    image_size,
+    num_channels,
+    num_res_blocks,
+    learn_sigma,
+    class_cond,
+    use_checkpoint,
+    attention_resolutions,
+    num_heads,
+    num_heads_upsample,
+    use_scale_shift_norm,
+    dropout,
+):
+    # how unet constructed
+    if image_size == 256: 
+        channel_mult = (1, 1, 2, 2, 4, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        in_channels=6,
+        model_channels=num_channels,
+        out_channels=(3 if not learn_sigma else 6), #如果学习sigma的话，输出是6个通道，前三个是通道预测eps噪声，后三个通道预测方差
+        num_res_blocks=num_res_blocks,
+        attention_resolutions=tuple(attention_ds),
+        dropout=dropout,
+        channel_mult=channel_mult,
+        num_classes=(NUM_CLASSES if class_cond else None),
+        use_checkpoint=use_checkpoint,
+        num_heads=num_heads,
+        num_heads_upsample=num_heads_upsample,
+        use_scale_shift_norm=use_scale_shift_norm,
+    )
+
 class Network(BaseNetwork):
     def __init__(self, unet, beta_schedule, module_name='sr3', **kwargs):
         super(Network, self).__init__(**kwargs)
@@ -56,9 +102,8 @@ class Network(BaseNetwork):
         elif module_name == 'improved':
             from .guided_diffusion_modules.unet import UNet
             self.denoise_fn = UNet(**unet)
-        """
+        
         elif module_name == 'improved_biggan':
-            from .guided_diffusion_modules.unet_improved import UNetModel
             model_defaults = dict(
                 image_size=256,
                 num_channels=128,
@@ -71,16 +116,17 @@ class Network(BaseNetwork):
                 num_heads_upsample=-1,
                 use_scale_shift_norm=True,
                 dropout=0.0,)
-            self.denoise_fn = UNetModel(**model_defaults)
-        """
+            self.denoise_fn = create_model(**model_defaults)
+        
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
-        self.time_step_respacing = beta_schedule['test']['time_step_respacing']
 
         #print(self.num_timesteps)
         if not beta_schedule['test']['is_test']:
+            self.time_step_respacing = self.num_timesteps
             self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2')
         else:
+            self.time_step_respacing = beta_schedule['test']['time_step_respacing']
             self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.time_step_respacing))
 
     def _create_gaussian_diffusion(self, steps, noise_schedule, timestep_respacing=''):
@@ -111,7 +157,7 @@ class Network(BaseNetwork):
         self.register_buffer('gammas', to_torch(gammas))
         """
         pass
-    
+
     def set_loss(self, loss_fn):
         self.loss_fn = loss_fn
 
