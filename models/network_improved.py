@@ -93,6 +93,7 @@ class Network(BaseNetwork):
         )
 
     def set_new_noise_schedule(self, device=torch.device('cuda'), phase='train'):
+        """
         to_torch = partial(torch.tensor, dtype=torch.float32, device=device)
         betas = make_beta_schedule(**self.beta_schedule[phase])
         betas = betas.detach().cpu().numpy() if isinstance(
@@ -108,7 +109,9 @@ class Network(BaseNetwork):
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
         self.register_buffer('gammas', to_torch(gammas))
-
+        """
+        pass
+    
     def set_loss(self, loss_fn):
         self.loss_fn = loss_fn
 
