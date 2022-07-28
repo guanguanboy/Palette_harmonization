@@ -10,7 +10,7 @@ import torch as th
 
 from models.nn import mean_flat
 from models.losses import normal_kl, discretized_gaussian_log_likelihood
-
+from models.loss import l1_loss
 
 def _warmup_beta(beta_start, beta_end, num_diffusion_timesteps, warmup_frac):
     betas = beta_end * np.ones(num_diffusion_timesteps, dtype=np.float64)
@@ -134,6 +134,24 @@ class LossType(enum.Enum):
 
     def is_vb(self):
         return self == LossType.KL or self == LossType.RESCALED_KL
+
+from torchvision.transforms import Resize
+
+def resize_tensor(input_tensor):
+    width=input_tensor.shape[2]
+    height = input_tensor.shape[3]
+    output_tensor = input_tensor
+    output_tensor_list = []
+    output_tensor_list.append(output_tensor)
+    for i in range(3):
+        width = width//2
+        height = height//2
+        tensor = output_tensor
+        torch_resize_fun = Resize([width,height])
+        output_tensor = torch_resize_fun(tensor)
+        output_tensor_list.insert(0, output_tensor)
+
+    return output_tensor_list
 
 class GaussianDiffusion:
     """
@@ -314,6 +332,72 @@ class GaussianDiffusion:
             "extra": extra,
         }
 
+    def p_mean_variance_dp(self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None):
+        """
+        Apply the model to get p(x_{t-1} | x_t), as well as a prediction of
+        the initial x, x_0.
+
+        :param model: the model, which takes a signal and a batch of timesteps
+                      as input.
+        :param x: the [N x C x ...] tensor at time t.
+        :param t: a 1-D Tensor of timesteps.
+        :param clip_denoised: if True, clip the denoised signal into [-1, 1].
+        :param denoised_fn: if not None, a function which applies to the
+            x_start prediction before it is used to sample. Applies before
+            clip_denoised.
+        :param model_kwargs: if not None, a dict of extra keyword arguments to
+            pass to the model. This can be used for conditioning.
+        :return: a dict with the following keys:
+                 - 'mean': the model mean output.
+                 - 'variance': the model variance output.
+                 - 'log_variance': the log of 'variance'.
+                 - 'pred_xstart': the prediction for x_0.
+        """
+        if model_kwargs is None:
+            model_kwargs = {}
+
+        B, C = x.shape[:2]
+        assert t.shape == (B,)
+
+        #在这里将y_cond从model_kwargs中取出来，与x进行cat传入model中
+        y_cond = model_kwargs['y_cond']
+        new_x = th.cat([y_cond, x], dim=1)
+
+        model_output_list = model(new_x, t)
+        model_output = model_output_list[-1] #采样时，取出最后一层输出的作为输出。
+        if isinstance(model_output, tuple):
+            model_output, extra = model_output
+        else:
+            extra = None
+
+        assert model_output.shape == (B, C * 2, *x.shape[2:])
+        model_output, model_var_values = th.split(model_output, C, dim=1)
+        min_log = _extract_into_tensor(self.posterior_log_variance_clipped, t, x.shape)
+        max_log = _extract_into_tensor(np.log(self.betas), t, x.shape)
+        # The model_var_values is [-1, 1] for [min_var, max_var].
+        frac = (model_var_values + 1) / 2
+        model_log_variance = frac * max_log + (1 - frac) * min_log
+        model_variance = th.exp(model_log_variance)
+
+        def process_xstart(x):
+            if denoised_fn is not None:
+                x = denoised_fn(x)
+            if clip_denoised:
+                return x.clamp(-1, 1)
+            return x
+
+        pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
+        model_mean, _, _ = self.q_posterior_mean_variance(x_start=pred_xstart, x_t=x, t=t)
+
+        assert model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
+        return {
+            "mean": model_mean,
+            "variance": model_variance,
+            "log_variance": model_log_variance,
+            "pred_xstart": pred_xstart,
+            "extra": extra,
+        }
+
     def _predict_xstart_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape
         return (
@@ -392,6 +476,50 @@ class GaussianDiffusion:
                  - 'pred_xstart': a prediction of x_0.
         """
         out = self.p_mean_variance(
+            model,
+            x,
+            t,
+            clip_denoised=clip_denoised,
+            denoised_fn=denoised_fn,
+            model_kwargs=model_kwargs,
+        )
+        noise = th.randn_like(x)
+        nonzero_mask = (
+            (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
+        )  # no noise when t == 0
+        if cond_fn is not None:
+            out["mean"] = self.condition_mean(cond_fn, out, x, t, model_kwargs=model_kwargs)
+        sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
+        return {"sample": sample, "pred_xstart": out["pred_xstart"]}
+
+    def p_sample_dp(
+        self,
+        model,
+        x,
+        t,
+        clip_denoised=True,
+        denoised_fn=None,
+        cond_fn=None,
+        model_kwargs=None,
+    ):
+        """
+        Sample x_{t-1} from the model at the given timestep.
+
+        :param model: the model to sample from.
+        :param x: the current tensor at x_{t-1}.
+        :param t: the value of t, starting at 0 for the first diffusion step.
+        :param clip_denoised: if True, clip the x_start prediction to [-1, 1].
+        :param denoised_fn: if not None, a function which applies to the
+            x_start prediction before it is used to sample.
+        :param cond_fn: if not None, this is a gradient function that acts
+                        similarly to the model.
+        :param model_kwargs: if not None, a dict of extra keyword arguments to
+            pass to the model. This can be used for conditioning.
+        :return: a dict containing the following keys:
+                 - 'sample': a random sample from the model.
+                 - 'pred_xstart': a prediction of x_0.
+        """
+        out = self.p_mean_variance_dp(
             model,
             x,
             t,
@@ -786,11 +914,199 @@ class GaussianDiffusion:
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
             #terms["mse"] = mean_flat((target - model_output) ** 2) #做mse loss
+            #terms["mse"] = mean_flat((target*mask - model_output*mask) ** 2) #做mse loss
+            terms["mse"] = l1_loss(target, model_output)
+
+            if "vb" in terms:
+                terms["loss"] = terms["mse"] + terms["vb"] #hybrid loss
+            else:
+                terms["loss"] = terms["mse"]
+        else:
+            raise NotImplementedError(self.loss_type)
+
+        return terms
+
+    def training_losses_backup(self, model, x_start, t, model_kwargs=None, noise=None):
+        """
+        Compute training losses for a single timestep. 计算一个时间步的loss。
+
+        :param model: the model to evaluate loss on.
+        :param x_start: the [N x C x ...] tensor of inputs.
+        :param t: a batch of timestep indices.
+        :param model_kwargs: if not None, a dict of extra keyword arguments to
+            pass to the model. This can be used for conditioning.
+        :param noise: if specified, the specific Gaussian noise to try to remove.
+        :return: a dict with the key "loss" containing a tensor of shape [N].
+                 Some mean or variance settings may also have other keys.
+        """
+        if model_kwargs is None:
+            model_kwargs = {}
+        if noise is None:
+            noise = th.randn_like(x_start) # （2，3， 64， 64）
+        x_t = self.q_sample(x_start, t, noise=noise) #使用DDPM论文中的公式（4）
+
+        terms = {}
+
+        if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
+            terms["loss"] = self._vb_terms_bpd(
+                model=model,
+                x_start=x_start,
+                x_t=x_t,
+                t=t,
+                clip_denoised=False,
+                model_kwargs=model_kwargs,
+            )["output"]
+            if self.loss_type == LossType.RESCALED_KL:
+                terms["loss"] *= self.num_timesteps
+        elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+
+            ##这里应该做这样的修改，        #torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0]
+            ##把model_kwargs中的mask和y_cond取出来，cat起来传输到模型中，然后model_kwargs给赋值为空传入模型就行了。
+            y_cond = model_kwargs['y_cond']
+            mask = model_kwargs['mask']
+            new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
+            #new_st = th.cat([y_cond, x_t], dim=1)
+            model_output = model(new_st, t) #output的shape是（2，6，64，64），前三个通道是epsilong噪声，后三个通道是方差
+
+            if self.model_var_type in [
+                ModelVarType.LEARNED,
+                ModelVarType.LEARNED_RANGE,
+            ]:
+                B, C = x_t.shape[:2]
+                assert model_output.shape == (B, C * 2, *x_t.shape[2:])
+                model_output, model_var_values = th.split(model_output, C, dim=1) 
+                # Learn the variance using the variational bound, but don't let
+                # it affect our mean prediction.
+                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
+                terms["vb"] = self._vb_terms_bpd(
+                    model=lambda *args, r=frozen_out: r,
+                    x_start=x_start, #原始图像
+                    x_t=x_t, #加了噪声的图像,
+                    #x_t=new_st, #如果是带mask的话，这里应该是new_st
+                    t=t,
+                    clip_denoised=False,
+                    model_kwargs = model_kwargs
+                )["output"]
+                if self.loss_type == LossType.RESCALED_MSE:
+                    # Divide by 1000 for equivalence with initial implementation.
+                    # Without a factor of 1/1000, the VB term hurts the MSE term.
+                    terms["vb"] *= self.num_timesteps / 1000.0
+
+            target = {
+                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
+                    x_start=x_start, x_t=x_t, t=t
+                )[0],
+                ModelMeanType.START_X: x_start,
+                ModelMeanType.EPSILON: noise,
+            }[self.model_mean_type]
+            assert model_output.shape == target.shape == x_start.shape
+            #terms["mse"] = mean_flat((target - model_output) ** 2) #做mse loss
             terms["mse"] = mean_flat((target*mask - model_output*mask) ** 2) #做mse loss
             if "vb" in terms:
                 terms["loss"] = terms["mse"] + terms["vb"] #hybrid loss
             else:
                 terms["loss"] = terms["mse"]
+        else:
+            raise NotImplementedError(self.loss_type)
+
+        return terms
+
+    def training_losses_dp(self, model, x_start, t, model_kwargs=None, noise=None):
+        """
+        Compute training losses for a single timestep. 计算一个时间步的loss。
+
+        :param model: the model to evaluate loss on.
+        :param x_start: the [N x C x ...] tensor of inputs.
+        :param t: a batch of timestep indices.
+        :param model_kwargs: if not None, a dict of extra keyword arguments to
+            pass to the model. This can be used for conditioning.
+        :param noise: if specified, the specific Gaussian noise to try to remove.
+        :return: a dict with the key "loss" containing a tensor of shape [N].
+                 Some mean or variance settings may also have other keys.
+        """
+        if model_kwargs is None:
+            model_kwargs = {}
+        if noise is None:
+            noise = th.randn_like(x_start) # （2，3， 64， 64）
+        x_t = self.q_sample(x_start, t, noise=noise) #使用DDPM论文中的公式（4）
+
+        terms = {}
+
+        if self.loss_type == LossType.KL or self.loss_type == LossType.RESCALED_KL:
+            terms["loss"] = self._vb_terms_bpd(
+                model=model,
+                x_start=x_start,
+                x_t=x_t,
+                t=t,
+                clip_denoised=False,
+                model_kwargs=model_kwargs,
+            )["output"]
+            if self.loss_type == LossType.RESCALED_KL:
+                terms["loss"] *= self.num_timesteps
+        elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+
+            ##这里应该做这样的修改，        #torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0]
+            ##把model_kwargs中的mask和y_cond取出来，cat起来传输到模型中，然后model_kwargs给赋值为空传入模型就行了。
+            y_cond = model_kwargs['y_cond']
+            mask = model_kwargs['mask']
+            new_st = th.cat([y_cond, x_t*mask+(1.-mask)*x_start], dim=1)
+            #new_st = th.cat([y_cond, x_t], dim=1)
+            model_output_list = model(new_st, t) #output的shape是（2，6，64，64），前三个通道是epsilong噪声，后三个通道是方差
+
+            model_output_last = model_output_list[-1] #取出最后一个层次的输出，用来计算VLB loss和最后一层MSE loss。
+            if self.model_var_type in [
+                ModelVarType.LEARNED,
+                ModelVarType.LEARNED_RANGE,
+            ]:
+                B, C = x_t.shape[:2]
+                assert model_output_last.shape == (B, C * 2, *x_t.shape[2:])
+                model_output_last_eps, model_var_values = th.split(model_output_last, C, dim=1) 
+                # Learn the variance using the variational bound, but don't let
+                # it affect our mean prediction.
+                frozen_out = th.cat([model_output_last_eps.detach(), model_var_values], dim=1)
+                terms["vb"] = self._vb_terms_bpd(
+                    model=lambda *args, r=frozen_out: r,
+                    x_start=x_start, #原始图像
+                    x_t=x_t, #加了噪声的图像,
+                    #x_t=new_st, #如果是带mask的话，这里应该是new_st
+                    t=t,
+                    clip_denoised=False,
+                    model_kwargs = model_kwargs
+                )["output"]
+                if self.loss_type == LossType.RESCALED_MSE:
+                    # Divide by 1000 for equivalence with initial implementation.
+                    # Without a factor of 1/1000, the VB term hurts the MSE term.
+                    terms["vb"] *= self.num_timesteps / 1000.0
+
+            target = {
+                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
+                    x_start=x_start, x_t=x_t, t=t
+                )[0],
+                ModelMeanType.START_X: x_start,
+                ModelMeanType.EPSILON: noise,
+            }[self.model_mean_type]
+            assert model_output_last_eps.shape == target.shape == x_start.shape
+            #terms["mse"] = mean_flat((target - model_output) ** 2) #做mse loss
+            terms["mse"] = mean_flat((target*mask - model_output_last_eps*mask) ** 2) #做mse loss
+            if "vb" in terms:
+                terms["loss"] = terms["mse"] + terms["vb"] #hybrid loss
+            else:
+                terms["loss"] = terms["mse"]
+
+            ##接下来实现MSE的deep supervision
+            noise_resized_list = resize_tensor(noise)
+            mask_resized_list = resize_tensor(mask)
+            #target_resized_list = resize_tensor(target)
+            deep_loss = 0
+            for i in range(len(noise_resized_list) - 1):
+                output = model_output_list[i] #取出当前层次的输出
+                print('output.shape=', output.shape)
+                B, C = x_t.shape[:2]
+                model_output_eps, model_var_values = th.split(output, C, dim=1) 
+
+                deep_loss += mean_flat((model_output_eps*mask_resized_list[i] - noise_resized_list[i]*mask_resized_list[i]) ** 2)
+
+            terms["loss"] = terms["loss"] + deep_loss
         else:
             raise NotImplementedError(self.loss_type)
 

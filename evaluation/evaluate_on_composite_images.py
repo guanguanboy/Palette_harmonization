@@ -21,12 +21,12 @@ if __name__ == '__main__':
     mask_paths = []
     composite_paths = []
     composite_img_path_name = 'composite_noisy25_images'
-    subdataset_path = '/data1/liguanlin/Datasets/iHarmony/HAdobe5k/'
+    subdataset_path = '/data1/liguanlin/Datasets/iHarmony/HFlickr/'
 
     #files = '/data1/liguanlin/Datasets/iHarmony/HCOCO/HCOCO_test.txt'
-    #files = '/data1/liguanlin/Datasets/iHarmony/HFlickr/HFlickr_test.txt'
+    files = '/data1/liguanlin/Datasets/iHarmony/HFlickr/HFlickr_test.txt'
     #files = '/data1/liguanlin/Datasets/iHarmony/HCOCO/HCOCO_test.txt'
-    files = '/data1/liguanlin/Datasets/iHarmony/HAdobe5k/HAdobe5k_test.txt'
+    #files = '/data1/liguanlin/Datasets/iHarmony/HAdobe5k/HAdobe5k_test.txt'
     with open(files,'r') as f:
             for line in f.readlines():
                 name_str = line.rstrip()

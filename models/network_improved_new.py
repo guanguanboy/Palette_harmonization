@@ -1,4 +1,5 @@
 import math
+from operator import mod
 from sqlalchemy import null
 import torch
 from inspect import isfunction
@@ -168,21 +169,19 @@ class Network(BaseNetwork):
 
 
     @torch.no_grad()
-    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None): #从y_t采样t时刻的重构值
+    def p_sample(self, y_t, t, clip_denoised=True, y_cond=None, model_kwargs=None): #从y_t采样t时刻的重构值
         # Pack the tokens together into model kwargs. 用字典来保存模型参数，提高了模型接口的可扩展性
-        model_kwargs = dict(
-
-            #mask=mask,#torch.Size([2, 128])
-
-            # Masked inpainting image
-            y_cond=y_cond,
-            #inpaint_mask=source_mask_64.repeat(full_batch_size, 1, 1, 1).to(device),
-        )
 
         #需要在这里把相关的参数给整理好
-        #out = self.spaced_dpm.p_sample(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+        def keep_background_unchange_fn(x_t):
+            # Force the model to have the exact right x_start predictions
+            # for the part of the image which is known.
+            return (
+                x_t * model_kwargs['foreground_mask']
+                + model_kwargs['original_image'] * (1. - model_kwargs['foreground_mask'])
+            )
 
-        out = self.spaced_dpm.p_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+        out = self.spaced_dpm.p_sample(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=keep_background_unchange_fn, cond_fn=None,model_kwargs=model_kwargs)
         
         image = out["sample"]
 
@@ -195,13 +194,22 @@ class Network(BaseNetwork):
         assert self.time_step_respacing > sample_num, 'num_timesteps must greater than sample_num'
         sample_inter = (self.time_step_respacing//sample_num)
         
+        model_kwargs = dict(
+
+            #mask=mask,#torch.Size([2, 128])
+
+            # Masked inpainting image
+            y_cond=y_cond,
+            foreground_mask=mask,
+            original_image=y_0
+        )
         y_t = default(y_t, lambda: torch.randn_like(y_cond))
         ret_arr = y_t
         for i in tqdm(reversed(range(0, self.time_step_respacing)), desc='sampling loop time step', total=self.time_step_respacing):
             t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
-            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
-            if mask is not None:
-                y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
+            y_t = self.p_sample(y_t, t, y_cond=y_cond, model_kwargs=model_kwargs) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
+            #if mask is not None:
+                #y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
             if i % sample_inter == 0:
                 ret_arr = torch.cat([ret_arr, y_t], dim=0)
         return y_t, ret_arr
@@ -226,8 +234,8 @@ class Network(BaseNetwork):
         
         #torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0]
         
-        #loss = self.spaced_dpm.training_losses(self.denoise_fn, y_0, t, model_kwargs=model_kwargs)
-        loss = self.spaced_dpm.training_losses_dp(self.denoise_fn, y_0, t, model_kwargs=model_kwargs)
+        loss = self.spaced_dpm.training_losses(self.denoise_fn, y_0, t, model_kwargs=model_kwargs)
+        
         return loss
 
 
