@@ -625,7 +625,7 @@ if __name__ == '__main__':
         image_size=h,
         in_channel=c,
         inner_channel=64,
-        out_channel=3,
+        out_channel=6,
         res_blocks=2,
         attn_res=[8]
     ).cuda()
