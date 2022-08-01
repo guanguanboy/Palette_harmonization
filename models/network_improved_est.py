@@ -102,7 +102,9 @@ class Network(BaseNetwork):
         elif module_name == 'improved':
             from .guided_diffusion_modules.unet import UNet
             self.denoise_fn = UNet(**unet)
-        
+        elif module_name == 'full':
+            from .guided_diffusion_modules.unet_modified_full import UNet
+            self.denoise_fn = UNet(**unet)
         elif module_name == 'improved_biggan':
             model_defaults = dict(
                 image_size=256,
@@ -117,7 +119,7 @@ class Network(BaseNetwork):
                 use_scale_shift_norm=True,
                 dropout=0.0,)
             self.denoise_fn = create_model(**model_defaults)
-        
+
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
 
