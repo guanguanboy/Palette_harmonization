@@ -1,6 +1,6 @@
 {
     "name": "harmonization_allinone", // experiments name
-    "gpu_ids": [0,1,2], // gpu ids list, default is single 0
+    "gpu_ids": [0], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
 
@@ -11,7 +11,7 @@
         "results": "results",
         "checkpoint": "checkpoint",
         // "resume_state": "experiments/debug_inpainting_celebahq_220426_150122/checkpoint/1" 
-        "resume_state": null //"experiments/train_harmonization_day2night_220520_113349/checkpoint/6300" //"experiments/train_harmonization_day2night_220511_105812/checkpoint/10000"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
+        "resume_state": "pretrained_model/checkpoint/770" //"experiments/train_harmonization_day2night_220520_113349/checkpoint/6300" //"experiments/train_harmonization_day2night_220511_105812/checkpoint/10000"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
     },
 
     "datasets": { // train or test
@@ -48,7 +48,7 @@
             "which_dataset": {
                 "name": "HarmonizationTestDataset", // import Dataset() class / function(not recommend) from default file
                 "args":{
-                    "data_root": "/data1/liguanlin/Datasets/iHarmony/composite_images_test/",
+                    "data_root": "/data1/liguanlin/Datasets/iHarmony/Hday2night/composite_images_test/", //test on whole dataset /data1/liguanlin/Datasets/iHarmony/composite_images_test/
                     "mask_config": {
                         "mask_mode": "center"
                     }
@@ -66,7 +66,7 @@
 
     "model": { // networks/metrics/losses/optimizers/lr_schedulers is a list and model is a dict
         "which_model": { // import designated  model(trainer) using arguments 
-            "name": ["models.model", "Palette"], // import Model() class / function(not recommend) from models.model.py (default is [models.model.py])
+            "name": ["models.model_rihd", "RIHD"], // import Model() class / function(not recommend) from models.model.py (default is [models.model.py])
             "args": {
                 "sample_num": 8, // process of each image
                 "task": "inpainting",

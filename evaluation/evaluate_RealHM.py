@@ -22,14 +22,9 @@ if __name__ == '__main__':
     real_paths = []
     mask_paths = []
 
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_162755/results/test/0/'
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_113835/results/test/0/'
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_155132/results/test/0/'
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_102412/results/test/0/'
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_150437/results/test/0/'
-    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220527_165832/results/test/0/'
-    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_allinone_220809_085944/results/test/0/'
+ 
+    output_path = '/mnt/cfs/liguanlin/Codes/Palette_harmonization/experiments/test_harmonization_allinone_220809_120204/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_allinone_220809_085944/results/test/0/'
 
 
 
@@ -37,7 +32,8 @@ if __name__ == '__main__':
     image_small_list = []
     image_small_list_with_root = []
 
-    data_root = "/data1/liguanlin/Datasets/RealHM"
+    #data_root = "/data1/liguanlin/Datasets/RealHM"
+    data_root = "/mnt/cfs/liguanlin/Datasets/RealHM"
     for root, dirs, files in os.walk(data_root  + "/vendor_testing_1/"):
         for file in files:
             if "small" in file:

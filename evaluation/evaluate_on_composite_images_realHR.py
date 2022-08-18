@@ -20,33 +20,34 @@ if __name__ == '__main__':
     real_paths = []
     mask_paths = []
     composite_paths = []
-    composite_img_path_name = 'composite_noisy25_images'
-    #composite_img_path_name = 'composite_images' #计算原数据集的Input composite。
-    subdataset_path = '/data1/liguanlin/Datasets/iHarmony/HCOCO/'
+    image_small_list = []
+    data_root = '/data1/liguanlin/Datasets/RealHM'
+    for root, dirs, files in os.walk(data_root  + "/vendor_testing_1/"):
+        for file in files:
+            if "small" in file:
+                image_small_list.append(os.path.join(root, file))
+              
+    for root, dirs, files in os.walk(data_root  + "/vendor_testing_2/"):
+        for file in files:
+            if "small" in file:
+                image_small_list.append(os.path.join(root, file))
+               
+    for root, dirs, files in os.walk(data_root  + "/vendor_testing_3/"):
+        for file in files:
+            if "small" in file:
+                image_small_list.append(os.path.join(root, file))
+    
+    for i in range(len(image_small_list)):
 
-    #files = '/data1/liguanlin/Datasets/iHarmony/Hday2night/Hday2night_test.txt'
-    #files = '/data1/liguanlin/Datasets/iHarmony/HFlickr/HFlickr_test.txt'
-    files = '/data1/liguanlin/Datasets/iHarmony/HCOCO/HCOCO_test.txt'
-    #files = '/data1/liguanlin/Datasets/iHarmony/HAdobe5k/HAdobe5k_test.txt'
-    with open(files,'r') as f:
-            for line in f.readlines():
-                name_str = line.rstrip()
-                composite_img_file_name = os.path.join(subdataset_path, composite_img_path_name, name_str)
-                print(name_str)
-                print(composite_img_file_name)
+        path = image_small_list[i]
 
-                name_parts=name_str.split('_')
+        comp_path = path.replace("_small.jpg", "_composite_noise25.jpg")
+        mask_path = path.replace("_small.jpg", "_mask.jpg")
+        target_path = path.replace("_small.jpg", "_gt.jpg")
 
-                target_path = composite_img_file_name.replace(composite_img_path_name,'real_images') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
-                target_path = target_path.replace(('_'+name_parts[-2]+'_'+name_parts[-1]),'.jpg')                
-
-                mask_img_name = name_str.replace(('_'+name_parts[-1]),'.png')
-
-                mask_path = os.path.join(subdataset_path,'masks' ,mask_img_name)
-
-                real_paths.append(target_path)
-                mask_paths.append(mask_path)
-                composite_paths.append(composite_img_file_name)
+        real_paths.append(target_path)
+        mask_paths.append(mask_path)
+        composite_paths.append(comp_path)
 
     mse_scores = 0
     psnr_scores = 0

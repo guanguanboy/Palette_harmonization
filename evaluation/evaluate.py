@@ -11,6 +11,9 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as tf
 import pytorch_ssim
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0" #指定第一块gpu
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -23,11 +26,22 @@ if __name__ == '__main__':
     real_paths = []
     mask_paths = []
 
-    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_145224/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220505_162755/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_113835/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220512_155132/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_102412/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_150437/results/test/0/'
+    #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220527_165832/results/test/0/'
+    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_improved_220803_153028/results/test/0/'
+
+
+
+
     files = '/data1/liguanlin/Datasets/iHarmony/Hday2night/Hday2night_test.txt'
+    #files = '/mnt/cfs/liguanlin/Datasets/iHarmony4/HFlickr/HFlickr_test.txt'
+    #files = '/mnt/cfs/liguanlin/Datasets/iHarmony4/HCOCO/HCOCO_test.txt'
+    #files = '/mnt/cfs/liguanlin/Datasets/iHarmony4/HAdobe5k/HAdobe5k_test.txt'
     with open(files,'r') as f:
             for line in f.readlines():
                 name_str = line.rstrip()
