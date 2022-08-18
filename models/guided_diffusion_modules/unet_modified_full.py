@@ -676,7 +676,7 @@ class UNet(nn.Module):
         noise_level_emb = self.noise_level_emb(noise_level_mean_int) #torch.Size([3, 256])
 
         hs = []
-        hs_wavelet = []
+        #hs_wavelet = []
         gammas = gammas.view(-1, )
         emb = self.cond_embed(gamma_embedding(gammas, self.inner_channel)) #torch.Size([3, 256])
 
@@ -689,7 +689,7 @@ class UNet(nn.Module):
         for module in self.input_blocks:
             h = module(h, emb)
             hs.append(h) #将encoder部分的module的输出给保存起来
-            hs_wavelet.append(self.iwt(self.dwt(h)))
+            #hs_wavelet.append(self.iwt(self.dwt(h)))
             #print("input module")
 
         h = self.middle_block(h, emb)
@@ -697,7 +697,7 @@ class UNet(nn.Module):
         out_indx = 0
         for module in self.output_blocks:
             #print("output module", module)
-            h = torch.cat([h, hs_wavelet.pop()], dim=1)
+            h = torch.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
 
             if output_count < 10 and output_count % 3 == 2:
