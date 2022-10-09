@@ -33,7 +33,7 @@ if __name__ == '__main__':
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_102412/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_150437/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220527_165832/results/test/0/'
-    output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_improved_220803_153028/results/test/0/'
+    output_path = '/data2/liguanlin/codes/DDPMs/High_Res_Harmonization/experiments/test_harmonization_allinone_221009_192900/results/test/0/'
 
 
 

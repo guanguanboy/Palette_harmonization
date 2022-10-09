@@ -7,6 +7,7 @@ from tqdm import tqdm
 from core.base_network import BaseNetwork
 from torchvision.transforms import Resize
 import torch.nn.functional as F
+from models.lap_pyr_model import Lap_Pyramid_Conv
 
 def resize_tensor(input_tensor):
     width=input_tensor.shape[2]
@@ -50,6 +51,8 @@ class Network(BaseNetwork):
             self.denoise_fn = UNet(**unet)
 
         self.beta_schedule = beta_schedule
+
+        self.lap_pyramid = Lap_Pyramid_Conv(num_high=1, device=torch.device('cuda'))
 
     def set_loss(self, loss_fn):
         self.loss_fn = loss_fn
@@ -130,49 +133,70 @@ class Network(BaseNetwork):
 
     @torch.no_grad()
     def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8): #采样过程
+        #这里也需要把相关图像进行分解
+        pyr = self.lap_pyramid.pyramid_decom(y_cond)
+        y_cond_down = pyr[-1]
+        #对mask也做一个下采样
+        mask_down = torch.nn.functional.interpolate(mask, size=y_cond_down.shape[-2:])
+        y_0_down = torch.nn.functional.interpolate(y_0, size=y_cond_down.shape[-2:])
         b, *_ = y_cond.shape
 
         assert self.num_timesteps > sample_num, 'num_timesteps must greater than sample_num'
         sample_inter = (self.num_timesteps//sample_num)
         
-        y_t = default(y_t, lambda: torch.randn_like(y_cond))
-        ret_arr = y_t
+        y_t = default(y_t, lambda: torch.randn_like(y_cond_down))
+        ret_arr = torch.nn.functional.interpolate(y_t, size=y_cond.shape[-2:]) #保存下来的图像
         for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
-            t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
-            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
-            if mask is not None:
-                y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
+            t = torch.full((b,), i, device=y_cond_down.device, dtype=torch.long)
+            y_t = self.p_sample(y_t, t, y_cond=y_cond_down) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
+            if mask_down is not None:
+                y_t = y_0_down*(1.-mask_down) + mask_down*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
+                pyr[-1] = y_t
+                y_restored = self.lap_pyramid.pyramid_recons(pyr)
+                y_restored = y_0 * (1. - mask) + mask*y_restored
+
             if i % sample_inter == 0:
-                ret_arr = torch.cat([ret_arr, y_t], dim=0)
-        return y_t, ret_arr
+                ret_arr = torch.cat([ret_arr, y_restored], dim=0)
+        
+        return y_restored, ret_arr
 
     def forward(self, y_0, y_cond=None, mask=None, noise=None): #参数顺序，真实图片y_0，合成图片(条件图片y_cond)以及mask
         # sampling from p(gammas)
+
+        #这里需要做一个laplace的下采样
+        pyr = self.lap_pyramid.pyramid_decom(y_cond)
+        y_cond_down = pyr[-1]
+        #对mask也做一个下采样
+        mask_down = torch.nn.functional.interpolate(mask, size=y_cond_down.shape[-2:])
+
         b, *_ = y_0.shape
+
+        #对y_0做下采样
+        y0_down = torch.nn.functional.interpolate(mask, size=y_cond_down.shape[-2:])
         t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long() #随机生成一个时间点
         gamma_t1 = extract(self.gammas, t-1, x_shape=(1, 1))
         sqrt_gamma_t2 = extract(self.gammas, t, x_shape=(1, 1))
         sample_gammas = (sqrt_gamma_t2-gamma_t1) * torch.rand((b, 1), device=y_0.device) + gamma_t1
         sample_gammas = sample_gammas.view(b, -1) #torch.Size([4, 1]) 4是batch_size
 
-        noise = default(noise, lambda: torch.randn_like(y_0))
+        noise = default(noise, lambda: torch.randn_like(y_cond_down))
         
         y_noisy = self.q_sample(
-            y_0=y_0, sample_gammas=sample_gammas.view(-1, 1, 1, 1), noise=noise) #逐渐的给目标图像增加高斯噪声
+            y_0=y0_down, sample_gammas=sample_gammas.view(-1, 1, 1, 1), noise=noise) #逐渐的给目标图像增加高斯噪声
 
         noise_resized_list = resize_tensor(noise)
-        mask_resized_list = resize_tensor(mask)
+        mask_resized_list = resize_tensor(mask_down)
 
         loss = 0
         if mask is not None: #如果包含mask，则去噪的时候，将随机噪声y_noisy*mask+真实图片*（1-mask）作为一个输入
             #noise_level, noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), mask, sample_gammas)
             #print(len(noise_resized_list), len(mask_resized_list),len(noise_hat_list))
-            noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0], dim=1), sample_gammas)
+            noise_hat_list = self.denoise_fn(torch.cat([y_cond_down, y_noisy*mask_down+(1.-mask_down)*y0_down], dim=1), sample_gammas)
             #loss += F.mse_loss(noise_level*mask, y_0*mask) #for noise estimation
             for i in range(len(noise_hat_list)):
                 loss += self.loss_fn(mask_resized_list[i]*noise_resized_list[i], mask_resized_list[i]*noise_hat_list[i])
         else:
-            noise_hat_list = self.denoise_fn(torch.cat([y_cond, y_noisy], dim=1), sample_gammas)
+            noise_hat_list = self.denoise_fn(torch.cat([y_cond_down, y_noisy], dim=1), sample_gammas)
             for i in range(len(noise_hat_list)):
                 loss += self.loss_fn(mask_resized_list[i]*noise_resized_list[i], mask_resized_list[i]*noise_hat_list[i])
         return loss
