@@ -129,6 +129,8 @@ class Network(BaseNetwork):
             self.time_step_respacing = beta_schedule['test']['time_step_respacing']
             self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.time_step_respacing))
 
+        self.is_ddim = True
+
     def _create_gaussian_diffusion(self, steps, noise_schedule, timestep_respacing=''):
         betas = get_named_beta_schedule(noise_schedule, steps)
         if not timestep_respacing:
@@ -182,7 +184,11 @@ class Network(BaseNetwork):
         #需要在这里把相关的参数给整理好
         #out = self.spaced_dpm.p_sample(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
 
-        out = self.spaced_dpm.p_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+        if True == self.is_ddim:
+            out = self.spaced_dpm.ddim_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+
+        else:
+            out = self.spaced_dpm.p_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
         
         image = out["sample"]
 

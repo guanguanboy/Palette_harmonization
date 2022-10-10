@@ -1,6 +1,6 @@
 {
     "name": "harmonization_day2night_improved", // experiments name
-    "gpu_ids": [0,1,3], // gpu ids list, default is single 0
+    "gpu_ids": [2], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
 
@@ -11,7 +11,7 @@
         "results": "results",
         "checkpoint": "checkpoint",
         // "resume_state": "experiments/debug_inpainting_celebahq_220426_150122/checkpoint/1" 
-        "resume_state": "experiments/train_harmonization_day2night_improved_220726_234556/checkpoint/6600" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
+        "resume_state": "experiments/train_harmonization_day2night_improved_221010_173643/checkpoint/1" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
     },
 
     "datasets": { // train or test
@@ -29,7 +29,7 @@
             "dataloader":{
                 "validation_split": 2, // percent or number 
                 "args":{ // arguments to initialize train_dataloader
-                    "batch_size": 6, // batch size in each gpu
+                    "batch_size": 1, // batch size in each gpu
                     "num_workers": 4,
                     "shuffle": true,
                     "pin_memory": true,
@@ -66,7 +66,7 @@
 
     "model": { // networks/metrics/losses/optimizers/lr_schedulers is a list and model is a dict
         "which_model": { // import designated  model(trainer) using arguments 
-            "name": ["models.model", "Palette"], // import Model() class / function(not recommend) from models.model.py (default is [models.model.py])
+            "name": ["models.model_improved", "Palette"], // import Model() class / function(not recommend) from models.model.py (default is [models.model.py])
             "args": {
                 "sample_num": 8, // process of each image
                 "task": "inpainting",
@@ -123,7 +123,7 @@
                             "linear_start": 1e-4,
                             "linear_end": 0.09,
                             "is_test":true, //测试的时候将这里修改为true
-                            "time_step_respacing": 800
+                            "time_step_respacing": 50
 
                         }
                     }
@@ -148,8 +148,8 @@
     "train": { // arguments for basic training
         "n_epoch": 1e6,//1e6, // max epochs, not limited now
         "n_iter": 1e6, // max interations
-        "val_epoch": 100, // valdation every specified number of epochs
-        "save_checkpoint_epoch": 100,
+        "val_epoch": 1, // valdation every specified number of epochs
+        "save_checkpoint_epoch": 1,
         "log_iter": 1e4, // log every specified number of iterations
         "tensorboard" : true // tensorboardX enable
     },
