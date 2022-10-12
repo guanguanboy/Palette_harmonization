@@ -21,13 +21,13 @@ class RefineNet(nn.Module):
     def __init__(self, num_residual_blocks):
         super(RefineNet, self).__init__()
 
-        model = [nn.Conv2d(3, 64, 3, padding=1),
+        model = [nn.Conv2d(3, 3, 3, padding=1),
             nn.LeakyReLU()]
 
         for _ in range(num_residual_blocks):
-            model += [ResidualBlock(64)]
+            model += [ResidualBlock(3)]
 
-        model += [nn.Conv2d(64, 3, 3, padding=1),
+        model += [nn.Conv2d(3, 3, 3, padding=1),
             nn.LeakyReLU()]
 
         self.model = nn.Sequential(*model)
@@ -39,7 +39,7 @@ class RefineNet(nn.Module):
         return refined_output
 
 def test_1layer():
-    trans_High_model = RefineNet(num_residual_blocks=1)
+    trans_High_model = RefineNet(num_residual_blocks=0)
 
     intput_t = torch.randn(1, 3, 224, 224)
 

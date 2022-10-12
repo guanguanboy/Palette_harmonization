@@ -55,7 +55,7 @@ class Network(BaseNetwork):
 
         self.lap_pyramid = Lap_Pyramid_Conv(num_high=1, device=torch.device('cuda'))
 
-        self.refine_net = RefineNet(num_residual_blocks=1)
+        self.refine_net = RefineNet(num_residual_blocks=0)
         #self.parameterization = "eps" 
         #另一个值是x0
         self.parameterization = "x0" 
@@ -221,7 +221,7 @@ class Network(BaseNetwork):
             
             #for i in range(len(model_output_list)):
             #    loss += self.loss_fn(mask_resized_list[i]*target_resized_list[i], mask_resized_list[i]*model_output_list[i])
-            loss += self.loss_fn(mask*target, mask*refined_output)
+            loss += self.loss_fn(mask*target, mask*enlarged_output) + self.loss_fn(mask*target, mask*refined_output)
         else:
             model_output_list = self.denoise_fn(torch.cat([y_cond_down, y_noisy], dim=1), sample_gammas)
             #for i in range(len(model_output_list)):
