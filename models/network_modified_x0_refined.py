@@ -53,7 +53,7 @@ class Network(BaseNetwork):
 
         self.beta_schedule = beta_schedule
 
-        self.lap_pyramid = Lap_Pyramid_Conv(num_high=1, device=torch.device('cuda'))
+        self.lap_pyramid = Lap_Pyramid_Conv(num_high=2, device=torch.device('cuda'))
 
         self.refine_net = RefineNet(num_residual_blocks=0)
         #self.parameterization = "eps" 
@@ -166,7 +166,9 @@ class Network(BaseNetwork):
             if mask_down is not None:
                 y_t = y_0_down*(1.-mask_down) + mask_down*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
                 pyr[-1] = y_t
-                y_restored = self.lap_pyramid.pyramid_recons(pyr)
+                y_resconstrut = self.lap_pyramid.pyramid_recons(pyr)
+                y_restored = self.refine_net(y_resconstrut)
+
                 y_restored = y_0 * (1. - mask) + mask*y_restored
 
             if i % sample_inter == 0:
