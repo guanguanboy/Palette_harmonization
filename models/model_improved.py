@@ -79,13 +79,13 @@ class Palette(BaseModel):
         ret_result = []
         for idx in range(self.batch_size):
             ret_path.append('In_{}'.format(self.path[idx]))
-            ret_result.append(self.gt_image[idx].detach().float().cpu())
+            ret_result.append(self.cond_image[idx].detach().float().cpu())
 
             ret_path.append('Process_{}'.format(self.path[idx]))
             ret_result.append(self.visuals[idx::self.batch_size].detach().float().cpu())
             
             ret_path.append('Out_{}'.format(self.path[idx]))
-            ret_result.append(self.visuals[idx-self.batch_size].detach().float().cpu()) #这里记录的是idx减去batch_size的
+            ret_result.append(self.output[idx].detach().float().cpu()) #这里记录的是idx减去batch_size的
 
         self.results_dict = self.results_dict._replace(name=ret_path, result=ret_result)
         return self.results_dict._asdict()
@@ -113,6 +113,8 @@ class Palette(BaseModel):
                 for key, value in self.train_metrics.result().items():
                     self.logger.info('{:5s}: {}\t'.format(str(key), value))
                     self.writer.add_scalar(key, value)
+                    if 'ddpm_loss' in losses.keys(): #备份ddpm_loss的字典
+                        self.logger.info('{:5s}: {}\t'.format(str(key), losses["ddpm_loss"].mean().item()))
                 for key, value in self.get_current_visuals().items():
                     self.writer.add_images(key, value)
             if self.ema_scheduler is not None:
