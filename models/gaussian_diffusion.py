@@ -175,6 +175,11 @@ class GaussianDiffusion:
         self.loss_type = LossType.MSE
         self.rescale_timesteps = True
 
+        #self.model_mean_type = ModelMeanType.EPSILON
+        #self.model_var_type = ModelVarType.LEARNED_RANGE
+        #self.loss_type = LossType.RESCALED_MSE
+        #self.rescale_timesteps = True
+
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
@@ -304,14 +309,14 @@ class GaussianDiffusion:
         else:
             extra = None
 
-        assert model_output.shape == (B, C * 2, *x.shape[2:])
-        model_output, model_var_values = th.split(model_output, C, dim=1)
+        assert model_output.shape == (B, C, *x.shape[2:])
+        #model_output, model_var_values = th.split(model_output, C, dim=1)
         min_log = _extract_into_tensor(self.posterior_log_variance_clipped, t, x.shape)
         max_log = _extract_into_tensor(np.log(self.betas), t, x.shape)
         # The model_var_values is [-1, 1] for [min_var, max_var].
-        frac = (model_var_values + 1) / 2
-        model_log_variance = frac * max_log + (1 - frac) * min_log
-        model_variance = th.exp(model_log_variance)
+        #frac = (model_var_values + 1) / 2
+        #model_log_variance = frac * max_log + (1 - frac) * min_log
+        #model_variance = th.exp(model_log_variance)
 
         def process_xstart(x):
             if denoised_fn is not None:
@@ -320,10 +325,13 @@ class GaussianDiffusion:
                 return x.clamp(-1, 1)
             return x
 
-        pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
-        model_mean, _, _ = self.q_posterior_mean_variance(x_start=pred_xstart, x_t=x, t=t)
+        if self.model_mean_type == ModelMeanType.EPSILON:
+            pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
+        elif self.model_mean_type == ModelMeanType.START_X:
+            pred_xstart = model_output
+        model_mean, model_variance, model_log_variance = self.q_posterior_mean_variance(x_start=pred_xstart, x_t=x, t=t)
 
-        assert model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
+        assert model_mean.shape == model_log_variance.shape == pred_xstart == x.shape
         return {
             "mean": model_mean,
             "variance": model_variance,
@@ -452,7 +460,11 @@ class GaussianDiffusion:
                 return x.clamp(-1, 1)
             return x
 
-        pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
+        if self.model_mean_type == ModelMeanType.EPSILON:
+            pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
+        elif self.model_mean_type == ModelMeanType.START_X:
+            pred_xstart = model_output
+
         model_mean, model_variance, model_log_variance = self.q_posterior_mean_variance(x_start=pred_xstart, x_t=x, t=t)
 
         assert model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
