@@ -169,7 +169,7 @@ class Network(BaseNetwork):
             out = self.spaced_dpm.ddim_sample_dp_laplacian(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
 
         else:
-            out = self.spaced_dpm.p_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+            out = self.spaced_dpm.p_sample(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
         
         image = out["sample"]
 
@@ -320,5 +320,5 @@ def make_beta_schedule(schedule, n_timestep, linear_start=1e-6, linear_end=1e-2,
 
 
 if __name__ == "__main__":
-    dpm = create_gaussian_diffusion(steps=1000, noise_schedule='linear', timestep_respacing="100")
-    print(dpm)
+    #dpm = create_gaussian_diffusion(steps=1000, noise_schedule='linear', timestep_respacing="100")
+    print("hello network")

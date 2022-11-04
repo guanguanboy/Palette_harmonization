@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from models.gaussian_diffusion import get_named_beta_schedule
 from models.respace import SpacedDiffusion, space_timesteps
 from models.lap_pyr_model import Lap_Pyramid_Conv
+from models.refine_net import RefineNet
 
 def resize_tensor(input_tensor):
     width=input_tensor.shape[2]
@@ -102,9 +103,13 @@ class Network(BaseNetwork):
 
         self.is_ddim = True
 
-        self.lap_pyramid = Lap_Pyramid_Conv(num_high=1, device=torch.device('cuda'))
+        self.lap_pyramid = Lap_Pyramid_Conv(num_high=2, device=torch.device('cuda'))
 
-        #self.refine_net = RefineNet
+        for param in self.lap_pyramid.parameters():
+            param.requires_grad = False
+
+        self.refine_net = RefineNet(num_residual_blocks=1)
+
         #self.parameterization = "eps" 
         #另一个值是x0
         self.parameterization = "x0"
@@ -196,7 +201,8 @@ class Network(BaseNetwork):
             if mask_down is not None:
                 y_t = y_0_down*(1.-mask_down) + mask_down*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
                 pyr[-1] = y_t
-                y_restored = self.lap_pyramid.pyramid_recons(pyr)
+                y_resconstruct = self.lap_pyramid.pyramid_recons(pyr)
+                y_restored = self.refine_net(y_resconstruct)
                 y_restored = y_0 * (1. - mask) + mask*y_restored
 
             if i % sample_inter == 0:
@@ -208,7 +214,7 @@ class Network(BaseNetwork):
 
         #这里需要做一个laplace的下采样
         pyr = self.lap_pyramid.pyramid_decom(y_cond)
-        y_cond_down = pyr[-1]
+        y_cond_down = pyr[-1].detach()
 
         
         #对mask也做一个下采样
@@ -253,11 +259,12 @@ class Network(BaseNetwork):
         enlarged_output = self.lap_pyramid.pyramid_recons(pyr)
         #这里再增加一个refinement模块，对模型的输出进行
         #
+        y_restored = self.refine_net(enlarged_output)
 
         #for i in range(len(model_output_list)):
         #    loss += self.loss_fn(mask_resized_list[i]*target_resized_list[i], mask_resized_list[i]*model_output_list[i])
-        loss["ddpm"] = loss["loss"]
-        loss["loss"] += self.loss_fn(mask*target, mask*enlarged_output)      
+        #loss["ddpm"] = loss["loss"]
+        loss["loss"] = 10 * loss["loss"] + self.loss_fn(mask*target, mask*y_restored)
         return loss
 
 
