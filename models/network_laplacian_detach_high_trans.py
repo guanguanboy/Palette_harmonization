@@ -102,12 +102,12 @@ class Network(BaseNetwork):
 
         self.is_ddim = True
 
-        self.lap_pyramid = Lap_Pyramid_Conv(num_high=1, device=torch.device('cuda'))
+        self.lap_pyramid = Lap_Pyramid_Conv(num_high=2, device=torch.device('cuda'))
 
         for param in self.lap_pyramid.parameters():
             param.requires_grad = False
 
-        self.trans_high = Trans_high(num_residual_blocks=3, num_high=1)
+        self.trans_high = Trans_high(num_residual_blocks=3, num_high=2)
 
         #self.refine_net = RefineNet
         #self.parameterization = "eps" 
@@ -274,6 +274,7 @@ class Network(BaseNetwork):
         #    loss += self.loss_fn(mask_resized_list[i]*target_resized_list[i], mask_resized_list[i]*model_output_list[i])
         #loss["ddpm"] = loss["loss"]
         loss["loss"] += self.loss_fn(mask*target, mask*enlarged_output)
+        #loss["loss"] = 10 * loss["loss"] + self.loss_fn(mask*target, mask*enlarged_output)
         return loss
 
 

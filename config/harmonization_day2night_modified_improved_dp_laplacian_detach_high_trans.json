@@ -11,7 +11,7 @@
         "results": "results",
         "checkpoint": "checkpoint",
         // "resume_state": "experiments/debug_inpainting_celebahq_220426_150122/checkpoint/1" 
-        "resume_state": null//"experiments/train_harmonization_day2night_improved_lap_detach_221028_214600/checkpoint/24600" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
+        "resume_state": null//"experiments/train_harmonization_day2night_improved_lap_detach_high_trans_221103_210316/checkpoint/25000" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
     },
 
     "datasets": { // train or test
@@ -29,7 +29,7 @@
             "dataloader":{
                 "validation_split": 2, // percent or number 
                 "args":{ // arguments to initialize train_dataloader
-                    "batch_size": 16, // batch size in each gpu
+                    "batch_size": 64, // batch size in each gpu
                     "num_workers": 4,
                     "shuffle": true,
                     "pin_memory": true,
@@ -146,7 +146,7 @@
     },
 
     "train": { // arguments for basic training
-        "n_epoch": 10000,//1e6, // max epochs, not limited now
+        "n_epoch": 25000,//1e6, // max epochs, not limited now
         "n_iter": 1e6, // max interations
         "val_epoch": 1000, // valdation every specified number of epochs
         "save_checkpoint_epoch": 200,

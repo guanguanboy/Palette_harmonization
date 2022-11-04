@@ -3,6 +3,9 @@ import tqdm
 from core.base_model import BaseModel
 from core.logger import LogTracker
 import copy
+from thop import profile
+from thop import clever_format
+
 class EMA():
     def __init__(self, beta=0.9999):
         super().__init__()
@@ -54,7 +57,22 @@ class Palette(BaseModel):
 
         self.sample_num = sample_num
         self.task = task
-        
+
+        self.evaluate_efficiency()
+
+
+    def evaluate_efficiency(self):
+        size = 1024
+        gt = torch.randn((1,3,size,size)).cuda()
+        cond = torch.randn(1,3,size,size).cuda()
+        mask = torch.randn(1,1,size,size).cuda()
+
+        flops, params = profile(self.netG, inputs=(gt, cond, mask))
+        flops, params = clever_format([flops, params], '%.3f')
+
+        print('params=', params)
+        print('FLOPs=',flops)
+
     def set_input(self, data):
         ''' must use set_device in tensor '''
         self.cond_image = self.set_device(data.get('cond_image')) #条件图像，合成图像

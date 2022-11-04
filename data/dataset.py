@@ -16,7 +16,7 @@ IMG_EXTENSIONS = [
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
-def make_dataset(dir):
+def make_dataset(dir): #该函数的核心是返回路径列表，如在集群上需要改写。
     if os.path.isfile(dir):
         images = [i for i in np.genfromtxt(dir, dtype=np.str, encoding='utf-8')]
     else:
@@ -171,7 +171,7 @@ class HarmonizationTrainDataset(data.Dataset):
         target_path = self.imgs[index].replace('composite_images_train','real_images') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
         target_path = target_path.replace(('_'+name_parts[-2]+'_'+name_parts[-1]),'.jpg')
 
-        comp = Image.open(path).convert('RGB')
+        comp = Image.open(path).convert('RGB') #这段读取代码，如果在集群读取需要改变。
         real = Image.open(target_path).convert('RGB')
         mask = Image.open(mask_path).convert('1')
 
@@ -432,3 +432,132 @@ class SSHarmonizationTestDataset(data.Dataset):
         return len(self.image_small_list)
 
 
+class HarmonizationSuperResolutionTrainDataset(data.Dataset):
+    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[256, 256], loader=pil_loader):
+        imgs = make_dataset(data_root)
+        if data_len > 0:
+            self.imgs = imgs[:int(data_len)]
+        else:
+            self.imgs = imgs
+        self.tfs = transforms.Compose([
+                transforms.Resize((image_size[0], image_size[1])),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+        self.loader = loader
+        self.image_size = image_size
+        
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+
+    def __getitem__(self, index):
+        ret = {}
+        path = self.imgs[index]
+        name_parts=path.split('_')
+        mask_path = self.imgs[index].replace('composite_images_train','masks') # #修改点5，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        mask_path = mask_path.replace(('_'+name_parts[-1]),'.png')
+        target_path = self.imgs[index].replace('composite_images_train','real_images') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        target_path = target_path.replace(('_'+name_parts[-2]+'_'+name_parts[-1]),'.jpg')
+
+        comp = Image.open(path).convert('RGB')
+        real = Image.open(target_path).convert('RGB')
+        mask = Image.open(mask_path).convert('1')
+
+        comp = tf.resize(comp, [self.image_size[0], self.image_size[1]])
+        mask = tf.resize(mask, [self.image_size[0], self.image_size[1]])
+        #mask = tf.resize(mask, [224, 224]) #对MAE训练，需要将这里修改为224,224
+        real = tf.resize(real,[self.image_size[0],self.image_size[1]])
+
+        low_res = [64, 64]
+        lr_img = tf.resize(comp, [low_res[0], low_res[1]])
+
+        sr_img = tf.resize(lr_img, [self.image_size[0], self.image_size[1]])
+
+        #apply the same transform to composite and real images
+        comp = self.transform(comp)
+        #mask = self.mask_transform(mask)
+        mask = tf.to_tensor(mask)
+
+        real = self.transform(real)
+
+        lr_img = self.transform(lr_img)
+        sr_img = self.transform(sr_img)
+
+        ret['gt_image'] = real
+        ret['cond_image'] = comp
+        ret['mask'] = mask
+        ret['path'] = path.rsplit("/")[-1]
+        ret['lr_image'] = lr_img
+        ret['sr_image'] = sr_img
+
+        return ret
+
+    def __len__(self):
+        return len(self.imgs)
+        
+class HarmonizationSuperResolutionTestDataset(data.Dataset):
+    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[256, 256], loader=pil_loader):
+        imgs = make_dataset(data_root)
+        if data_len > 0:
+            self.imgs = imgs[:int(data_len)]
+        else:
+            self.imgs = imgs
+        self.tfs = transforms.Compose([
+                transforms.Resize((image_size[0], image_size[1])),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+        self.loader = loader
+        self.image_size = image_size
+        
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5,0.5, 0.5])
+        ])
+
+    def __getitem__(self, index):
+        ret = {}
+        path = self.imgs[index]
+        name_parts=path.split('_')
+        mask_path = self.imgs[index].replace('composite_images_test','masks') # #修改点5，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        mask_path = mask_path.replace(('_'+name_parts[-1]),'.png')
+        target_path = self.imgs[index].replace('composite_images_test','real_images') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        target_path = target_path.replace(('_'+name_parts[-2]+'_'+name_parts[-1]),'.jpg')
+
+        comp = Image.open(path).convert('RGB')
+        real = Image.open(target_path).convert('RGB')
+        mask = Image.open(mask_path).convert('1')
+
+        comp = tf.resize(comp, [self.image_size[0], self.image_size[1]])
+        mask = tf.resize(mask, [self.image_size[0], self.image_size[1]])
+        #mask = tf.resize(mask, [224, 224]) #对MAE训练，需要将这里修改为224,224
+        real = tf.resize(real,[self.image_size[0],self.image_size[1]])
+
+        low_res = [64, 64]
+        lr_img = tf.resize(comp, [low_res[0], low_res[1]])
+
+        sr_img = tf.resize(lr_img, [self.image_size[0], self.image_size[1]])
+
+        #apply the same transform to composite and real images
+        comp = self.transform(comp)
+        #mask = self.mask_transform(mask)
+        mask = tf.to_tensor(mask)
+
+        real = self.transform(real)
+
+        lr_img = self.transform(lr_img)
+        sr_img = self.transform(sr_img)
+
+        ret['gt_image'] = real
+        ret['cond_image'] = comp
+        ret['mask'] = mask
+        ret['path'] = path.rsplit("/")[-1]
+        ret['lr_image'] = lr_img
+        ret['sr_image'] = sr_img
+
+        return ret
+
+    def __len__(self):
+        return len(self.imgs)
