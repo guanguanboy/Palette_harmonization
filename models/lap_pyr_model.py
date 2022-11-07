@@ -258,6 +258,51 @@ class LPTNPaper(nn.Module):
 
         return fake_B_full
 
+class Trans_high_masked_residual(nn.Module):
+    def __init__(self, num_residual_blocks, num_high=3):
+        super(Trans_high_masked_residual, self).__init__()
+
+        self.num_high = num_high
+
+        model = [nn.Conv2d(10, 64, 3, padding=1),
+            nn.LeakyReLU()]
+
+        for _ in range(num_residual_blocks):
+            model += [ResidualBlock(64)]
+
+        model += [nn.Conv2d(64, 1, 3, padding=1)]
+
+        self.model = nn.Sequential(*model)
+
+        for i in range(self.num_high):
+            trans_mask_block = nn.Sequential(
+                nn.Conv2d(1, 16, 1),
+                nn.LeakyReLU(),
+                nn.Conv2d(16, 1, 1))
+            setattr(self, 'trans_mask_block_{}'.format(str(i)), trans_mask_block)
+
+    def forward(self, x, mask, pyr_original, fake_low): #Trans_high中x是将高频与上采样的低频concate起来的结果，这里我们将其设置为与mask也concate起来的结果
+
+        pyr_result = []
+        residual = self.model(torch.cat([x,mask], dim=1))
+
+        for i in range(self.num_high):
+            residual = nn.functional.interpolate(residual, size=(pyr_original[-2-i].shape[2], pyr_original[-2-i].shape[3]))
+            mask = nn.functional.interpolate(mask, size=(pyr_original[-2-i].shape[2], pyr_original[-2-i].shape[3]))
+            self.trans_mask_block = getattr(self, 'trans_mask_block_{}'.format(str(i)))
+            residual = self.trans_mask_block(residual)
+            result_highfreq = torch.add(pyr_original[-2-i], residual)
+            result_highfreq = result_highfreq * mask + (1 - mask) * pyr_original[-2-i] #将mask也考虑进来
+            setattr(self, 'result_highfreq_{}'.format(str(i)), result_highfreq)
+
+        for i in reversed(range(self.num_high)):
+            result_highfreq = getattr(self, 'result_highfreq_{}'.format(str(i)))
+            pyr_result.append(result_highfreq)
+
+        pyr_result.append(fake_low)
+
+        return pyr_result
+
 def test():
     lptn_model = Lap_Pyramid_Conv(num_high=2, device='cuda')
     lptn_model = lptn_model.cuda()
@@ -267,6 +312,20 @@ def test():
     output_t_len = len(output_t)
     for i in range(output_t_len):
         print('output_t.shape =', output_t[i].shape)
+
+    pyr_origin = output_t
+
+    x = torch.randn(1, 9, 112, 112).cuda()
+    mask = torch.randn(1, 1, 112, 112).cuda()
+    fake_low = torch.randn(1, 3, 56, 56).cuda()
+
+    high_trans_mask = Trans_high_masked_residual(num_residual_blocks=3, num_high=2)
+    lptn_model = high_trans_mask.cuda()
+
+    output = high_trans_mask(x, mask, pyr_origin, fake_low)
+    output_t_len = len(output)
+    for i in range(output_t_len):
+        print('output.shape =', output[i].shape)
 
 if __name__ == "__main__":
     test()
