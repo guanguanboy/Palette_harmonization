@@ -1,5 +1,5 @@
 {
-    "name": "harmonization_day2night_improved_lap_detach_high_trans_mask_residual", // experiments name
+    "name": "harmonization_day2night_improved_lap_detach_high_trans_mask_residual_L4", // experiments name
     "gpu_ids": [1], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
@@ -11,7 +11,7 @@
         "results": "results",
         "checkpoint": "checkpoint",
         // "resume_state": "experiments/debug_inpainting_celebahq_220426_150122/checkpoint/1" 
-        "resume_state": "experiments/train_harmonization_day2night_improved_lap_detach_high_trans_mask_residual_221110_230409/checkpoint/1000" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
+        "resume_state": "experiments/train_harmonization_day2night_improved_lap_detach_high_trans_mask_residual_L4_221110_225857/checkpoint/5450" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
     },
 
     "datasets": { // train or test
@@ -29,7 +29,7 @@
             "dataloader":{
                 "validation_split": 2, // percent or number 
                 "args":{ // arguments to initialize train_dataloader
-                    "batch_size": 4, // batch size in each gpu
+                    "batch_size": 16, // batch size in each gpu
                     "num_workers": 4,
                     "shuffle": true,
                     "pin_memory": true,
@@ -84,7 +84,7 @@
         }, 
         "which_networks": [ // import designated list of networks using arguments
             {
-                "name": ["models.network_laplacian_detach_high_trans_mask_residual", "Network"], // import Network() class / function(not recommend) from default file (default is [models/network.py]) 
+                "name": ["models.network_laplacian_detach_high_trans_mask_residual_L4", "Network"], // import Network() class / function(not recommend) from default file (default is [models/network.py]) 
                 "args": { // arguments to initialize network
                     "init_type": "kaiming", // method can be [normal | xavier| xavier_uniform | kaiming | orthogonal], default is kaiming
                     "module_name": "improved_laplacian", // sr3 | guided_diffusion

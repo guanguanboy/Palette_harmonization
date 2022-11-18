@@ -1,6 +1,6 @@
 {
-    "name": "harmonization_day2night_improved_lap_detach_high_trans_mask_residual", // experiments name
-    "gpu_ids": [1], // gpu ids list, default is single 0
+    "name": "harmonization_day2night_improved_lap_detach_high_trans_refinenet", // experiments name
+    "gpu_ids": [0], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
 
@@ -11,7 +11,7 @@
         "results": "results",
         "checkpoint": "checkpoint",
         // "resume_state": "experiments/debug_inpainting_celebahq_220426_150122/checkpoint/1" 
-        "resume_state": "experiments/train_harmonization_day2night_improved_lap_detach_high_trans_mask_residual_221110_230409/checkpoint/1000" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
+        "resume_state": "experiments/train_harmonization_day2night_improved_lap_detach_high_trans_refinenet_221105_172924/checkpoint/25000" //"experiments/train_harmonization_day2night_220630_112935/checkpoint/6500"//"experiments/train_harmonization_day2night_220506_220001/checkpoint/3370"//"experiments/train_harmonization_day2night_220430_123856/checkpoint/1850" // ex: 100, loading .state  and .pth from given epoch and iteration
     },
 
     "datasets": { // train or test
@@ -19,7 +19,7 @@
             "which_dataset": {  // import designated dataset using arguments 
                 "name": ["data.dataset", "HarmonizationTrainDataset"], // import Dataset() class / function(not recommend) from data.dataset.py (default is [data.dataset.py])
                 "args":{ // arguments to initialize dataset
-                    "data_root": "/data2/liguanlin/Datasets/iHarmony4/HAdobe5k_1024/composite_images_train_small/",
+                    "data_root": "/data2/liguanlin/Datasets/iHarmony4/Hday2night/composite_images_train/",
                     "data_len": -1,
                     "mask_config": {
                         "mask_mode": "hybrid"
@@ -29,7 +29,7 @@
             "dataloader":{
                 "validation_split": 2, // percent or number 
                 "args":{ // arguments to initialize train_dataloader
-                    "batch_size": 4, // batch size in each gpu
+                    "batch_size": 64, // batch size in each gpu
                     "num_workers": 4,
                     "shuffle": true,
                     "pin_memory": true,
@@ -48,7 +48,7 @@
             "which_dataset": {
                 "name": "HarmonizationTestDataset", // import Dataset() class / function(not recommend) from default file
                 "args":{
-                    "data_root": "/data2/liguanlin/Datasets/iHarmony4/HAdobe5k_1024/composite_images_test/",
+                    "data_root": "/data2/liguanlin/Datasets/iHarmony4/Hday2night/composite_images_test/",
                     "mask_config": {
                         "mask_mode": "center"
                     }
@@ -56,7 +56,7 @@
             },
             "dataloader":{
                 "args":{
-                    "batch_size": 16,
+                    "batch_size": 1,
                     "num_workers": 4,
                     "pin_memory": true
                 }
@@ -84,7 +84,7 @@
         }, 
         "which_networks": [ // import designated list of networks using arguments
             {
-                "name": ["models.network_laplacian_detach_high_trans_mask_residual", "Network"], // import Network() class / function(not recommend) from default file (default is [models/network.py]) 
+                "name": ["models.network_laplacian_detach_high_trans_refinenet", "Network"], // import Network() class / function(not recommend) from default file (default is [models/network.py]) 
                 "args": { // arguments to initialize network
                     "init_type": "kaiming", // method can be [normal | xavier| xavier_uniform | kaiming | orthogonal], default is kaiming
                     "module_name": "improved_laplacian", // sr3 | guided_diffusion
@@ -149,7 +149,7 @@
         "n_epoch": 25000,//1e6, // max epochs, not limited now
         "n_iter": 1e6, // max interations
         "val_epoch": 1000, // valdation every specified number of epochs
-        "save_checkpoint_epoch": 50,
+        "save_checkpoint_epoch": 200,
         "log_iter": 1e4, // log every specified number of iterations
         "tensorboard" : true // tensorboardX enable
     },

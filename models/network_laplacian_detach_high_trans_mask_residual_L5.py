@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 from models.gaussian_diffusion import get_named_beta_schedule
 from models.respace import SpacedDiffusion, space_timesteps
-
+from models.lap_pyr_model import Lap_Pyramid_Conv,Trans_high,Trans_high_masked_residual
 
 def resize_tensor(input_tensor):
     width=input_tensor.shape[2]
@@ -85,39 +85,10 @@ class Network(BaseNetwork):
         elif module_name == 'guided_diffusion':
             from .guided_diffusion_modules.unet_modified import UNet
             self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
-
-        elif module_name == 'transformer':
-            from .transformer_modules.timeswinir import TimeSwinIR
-            self.denoise_fn = TimeSwinIR(**unet) #去噪模型是一个u-net
-
-        elif module_name == 'wavelet':
-            from .guided_diffusion_modules.unet_wavelet_skip import UNet
+        elif module_name == 'improved_laplacian':
+            from .guided_diffusion_modules.unet_modified_laplacian import UNet
             self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
-        elif module_name == 'focal':
-            from .guided_diffusion_modules.unet_modified_focal_attn import UNet
-            self.denoise_fn = UNet(**unet) #去噪模型是一个u-net
-        elif module_name == 'noise_level_estimation':
-            from .guided_diffusion_modules.unet_modified_with_est import UNet
-            self.denoise_fn = UNet(**unet)
-        elif module_name == 'improved':
-            from .guided_diffusion_modules.unet import UNet
-            self.denoise_fn = UNet(**unet)
-        
-        elif module_name == 'improved_biggan':
-            model_defaults = dict(
-                image_size=256,
-                num_channels=128,
-                num_res_blocks=3,
-                learn_sigma=True,
-                class_cond=False,
-                use_checkpoint=False,
-                attention_resolutions="16,8",
-                num_heads=4,
-                num_heads_upsample=-1,
-                use_scale_shift_norm=True,
-                dropout=0.0,)
-            self.denoise_fn = create_model(**model_defaults)
-        
+
         self.beta_schedule = beta_schedule
         self.num_timesteps = beta_schedule['train']['n_timestep']
 
@@ -130,6 +101,18 @@ class Network(BaseNetwork):
             self.spaced_dpm = self._create_gaussian_diffusion(steps=self.num_timesteps, noise_schedule='squaredcos_cap_v2', timestep_respacing=str(self.time_step_respacing))
 
         self.is_ddim = True
+
+        self.lap_pyramid = Lap_Pyramid_Conv(num_high=4, device=torch.device('cuda'))
+
+        for param in self.lap_pyramid.parameters():
+            param.requires_grad = False
+
+        self.trans_high = Trans_high_masked_residual(num_residual_blocks=3, num_high=4)
+
+        #self.refine_net = RefineNet
+        #self.parameterization = "eps" 
+        #另一个值是x0
+        self.parameterization = "x0"
 
     def _create_gaussian_diffusion(self, steps, noise_schedule, timestep_respacing=''):
         betas = get_named_beta_schedule(noise_schedule, steps)
@@ -167,7 +150,17 @@ class Network(BaseNetwork):
     def q_sample(self, y_0, time_step, noise=None): #计算扩散过程中任意时刻y_t的采样值，直接套公式,采样得到一张噪声图片
         return self.spaced_dpm.q_sample(x_start=y_0, t=time_step, noise=noise)
 
+    def get_recon_res(self, pyr, mask, model_output):
+        fake_B_low = model_output
+        real_A_up = F.interpolate(pyr[-1], size=(pyr[-2].shape[2], pyr[-2].shape[3]))
+        fake_B_up = F.interpolate(fake_B_low, size=(pyr[-2].shape[2], pyr[-2].shape[3]))
+        mask = F.interpolate(mask, size=(pyr[-2].shape[2], pyr[-2].shape[3]))
+        high_with_low = torch.cat([pyr[-2], real_A_up, fake_B_up], 1)
+        pyr_A_trans = self.trans_high(high_with_low, mask, pyr, fake_B_low)
 
+        enlarged_output = self.lap_pyramid.pyramid_recons(pyr_A_trans)
+
+        return enlarged_output
 
     @torch.no_grad()
     def p_sample(self, y_t, t, clip_denoised=True, y_cond=None): #从y_t采样t时刻的重构值
@@ -185,7 +178,7 @@ class Network(BaseNetwork):
         #out = self.spaced_dpm.p_sample(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
 
         if True == self.is_ddim:
-            out = self.spaced_dpm.ddim_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
+            out = self.spaced_dpm.ddim_sample_dp_laplacian(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
 
         else:
             out = self.spaced_dpm.p_sample_dp(model=self.denoise_fn, x=y_t, t=t, clip_denoised=clip_denoised, denoised_fn=None, cond_fn=None,model_kwargs=model_kwargs)
@@ -196,49 +189,93 @@ class Network(BaseNetwork):
 
     @torch.no_grad()
     def restoration(self, y_cond, y_t=None, y_0=None, mask=None, sample_num=8): #采样过程，类似于IDDPM中的源码p_sample_loop
-        b, *_ = y_cond.shape
+        #这里也需要把相关图像进行分解
+        pyr = self.lap_pyramid.pyramid_decom(y_cond)
+        y_cond_down = pyr[-1]
+        #对mask也做一个下采样
+        mask_down = torch.nn.functional.interpolate(mask, size=y_cond_down.shape[-2:])
+        y_0_down = torch.nn.functional.interpolate(y_0, size=y_cond_down.shape[-2:])
 
-        #y_cond = apply_aug(y_cond, 0.1)
+        
+        b, *_ = y_cond.shape
 
         assert self.time_step_respacing > sample_num, 'num_timesteps must greater than sample_num'
         sample_inter = (self.time_step_respacing//sample_num)
         
-        y_t = default(y_t, lambda: torch.randn_like(y_cond))
+        y_t = default(y_cond_down, lambda: torch.randn_like(y_cond_down))
+        #ret_arr = torch.nn.functional.interpolate(y_t, size=y_cond.shape[-2:]) #保存下来的图像
         ret_arr = y_t
         for i in tqdm(reversed(range(0, self.time_step_respacing)), desc='sampling loop time step', total=self.time_step_respacing):
-            t = torch.full((b,), i, device=y_cond.device, dtype=torch.long)
-            y_t = self.p_sample(y_t, t, y_cond=y_cond) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
-            if mask is not None:
-                y_t = y_0*(1.-mask) + mask*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
+            t = torch.full((b,), i, device=y_cond_down.device, dtype=torch.long)
+            y_t = self.p_sample(y_t, t, y_cond=y_cond_down) #将y_t作为下一个迭代的输入来生成新的y_t #会在p_sample调用函数。
+            if mask_down is not None:
+                y_t = y_0_down*(1.-mask_down) + mask_down*y_t #得到y_t之后，将y_t作为下一个sample 生成的输入
+                #pyr[-1] = y_t
+                y_restored = self.get_recon_res(pyr, mask_down, y_t)
+                y_restored = y_0 * (1. - mask) + mask*y_restored
+
             if i % sample_inter == 0:
                 ret_arr = torch.cat([ret_arr, y_t], dim=0)
-        return y_t, ret_arr
+        return y_restored, ret_arr
 
     def forward(self, y_0, y_cond=None, mask=None, noise=None): #参数顺序，真实图片y_0，合成图片(条件图片y_cond)以及mask
         # sampling from p(gammas)该函数的输出是loss，可以调用IDDPM中的compute_losses函数来实现。
+
+        #这里需要做一个laplace的下采样
+        pyr = self.lap_pyramid.pyramid_decom(y_cond)
+        y_cond_down = pyr[-1].detach()
+
         
+        #对mask也做一个下采样
+        mask_down = torch.nn.functional.interpolate(mask, size=y_cond_down.shape[-2:])
+
         ###构造t
         b, *_ = y_0.shape
+
+        #对y_0做下采样
+        y0_down = torch.nn.functional.interpolate(y_0, size=y_cond_down.shape[-2:])
+
         t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long() #随机生成一个时间点
 
-        ##data augmentation
-        #aug_level = np.random.uniform(0.0, 1.0)
-        #y_cond = apply_aug(y_cond, aug_level)
+        noise_down = default(noise, lambda: torch.randn_like(y_cond_down))
+
+
         #构造可变参数
         model_kwargs = dict(
 
-            mask= mask,#torch.Size([2, 128])
+            mask= mask_down,#torch.Size([2, 128])
 
             # Masked inpainting image
-            y_cond=y_cond,
+            y_cond=y_cond_down,
             #inpaint_mask=source_mask_64.repeat(full_batch_size, 1, 1, 1).to(device),
-            noise=noise,
+            noise=noise_down,
         )
         
-        #torch.cat([y_cond, y_noisy*mask+(1.-mask)*y_0]
+
+        if self.parameterization == "eps":
+            target = noise
+        elif self.parameterization == "x0":
+            target = y_0
+        else:
+            raise NotImplementedError()
+
+        #希望这里能返回预测好的x0
+        loss, model_output = self.spaced_dpm.get_training_losses_and_x0(self.denoise_fn, y0_down, t, model_kwargs=model_kwargs)
+
         
-        #loss = self.spaced_dpm.training_losses(self.denoise_fn, y_0, t, model_kwargs=model_kwargs)
-        loss = self.spaced_dpm.training_losses_dp(self.denoise_fn, y_0, t, model_kwargs=model_kwargs)
+        #先使用laplance重建对模型进行重建，
+        #pyr[-1] = model_output
+        #enlarged_output = self.lap_pyramid.pyramid_recons(pyr)
+        enlarged_output = self.get_recon_res(pyr, mask_down, model_output)
+
+        #这里再增加一个refinement模块，对模型的输出进行
+        #
+
+        #for i in range(len(model_output_list)):
+        #    loss += self.loss_fn(mask_resized_list[i]*target_resized_list[i], mask_resized_list[i]*model_output_list[i])
+        #loss["ddpm"] = loss["loss"]
+        loss["loss"] += self.loss_fn(mask*target, mask*enlarged_output)
+        #loss["loss"] = 10 * loss["loss"] + self.loss_fn(mask*target, mask*enlarged_output)
         return loss
 
 
@@ -296,14 +333,6 @@ def make_beta_schedule(schedule, n_timestep, linear_start=1e-6, linear_end=1e-2,
         raise NotImplementedError(schedule)
     return betas
 
-import skimage
-import random
-
-def apply_aug(s, aug_level):
-    #var = random.uniform(0.0001, 1.0)
-    s_numpy = s.cpu().numpy()
-    noisy = skimage.util.random_noise(s_numpy, mode='gaussian', var=aug_level)
-    return torch.from_numpy(noisy.astype(np.float32)).to(s.device)
 
 if __name__ == "__main__":
     dpm = create_gaussian_diffusion(steps=1000, noise_schedule='linear', timestep_respacing="100")
