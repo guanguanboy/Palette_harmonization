@@ -33,7 +33,7 @@ if __name__ == '__main__':
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_102412/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220514_150437/results/test/0/'
     #output_path = '/data1/liguanlin/research_projects/DPM/Palette-Image-to-Image-Diffusion-Models/experiments/test_harmonization_day2night_220527_165832/results/test/0/'
-    output_path = '/data2/liguanlin/codes/DDPMs/High_Res_Harmonization/experiments/test_harmonization_day2night_improved_lap_detach_high_trans_mask_residual_L4_221115_213634/results/test/0/'
+    output_path = '/data1/liguanlin/codes/research_projects/Palette_harmonization/experiments/test_harmonization_LapDM_updated_230323_050253/results/test/0/'
 
 
 
@@ -41,21 +41,23 @@ if __name__ == '__main__':
     #files = '/data1/liguanlin/Datasets/iHarmony/Hday2night/Hday2night_test.txt'
     #files = '/mnt/cfs/liguanlin/Datasets/iHarmony4/HFlickr/HFlickr_test.txt'
     #files = '/mnt/cfs/liguanlin/Datasets/iHarmony4/HCOCO/HCOCO_test.txt'
-    files = '/data2/liguanlin/Datasets/iHarmony4/HAdobe5k_1024/HAdobe5k_test.txt'
+    files = '/data1/liguanlin/Datasets/iHarmony4/HAdobe5k_1024/HAdobe5k_test.txt'
+    subdataset_path = '/data1/liguanlin/Datasets/iHarmony4/HAdobe5k_256/'
+
     with open(files,'r') as f:
             for line in f.readlines():
                 name_str = line.rstrip()
                 
                 harmonized_img_name = 'Out_' + name_str
                 harmonized_path = os.path.join(output_path, harmonized_img_name)
-                
-                real_img_name = 'In_' + name_str
-                real_path = os.path.join(output_path, real_img_name)
 
+                real_path = os.path.join(subdataset_path, 'real_images', name_str)
                 name_parts=name_str.split('_')
+
+                real_path = real_path.replace(('_'+name_parts[-2]+'_'+name_parts[-1]),'.jpg')                
                 mask_img_name = name_str.replace(('_'+name_parts[-1]),'.png')
 
-                mask_path = '/data2/liguanlin/Datasets/iHarmony4/HAdobe5k_1024/masks/' + mask_img_name
+                mask_path = '/data1/liguanlin/Datasets/iHarmony4/HAdobe5k_256/masks/' + mask_img_name
 
                 real_paths.append(real_path)
                 harmonized_paths.append(harmonized_path)
@@ -64,7 +66,7 @@ if __name__ == '__main__':
     mse_scores = 0
     psnr_scores = 0
     ssim_scores = 0
-    image_size = 1024
+    image_size = 256
     fmse_scores = 0
     fpsnr_scores = 0
     fssim_scores = 0

@@ -143,7 +143,7 @@ import torchvision.transforms.functional as tf
 from data.base_dataset import get_transform
 
 class HarmonizationTrainDataset(data.Dataset):
-    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[1024, 1024], loader=pil_loader):
+    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[256, 256], loader=pil_loader):
         imgs = make_dataset(data_root)
         if data_len > 0:
             self.imgs = imgs[:int(data_len)]
@@ -166,9 +166,9 @@ class HarmonizationTrainDataset(data.Dataset):
         ret = {}
         path = self.imgs[index]
         name_parts=path.split('_')
-        mask_path = self.imgs[index].replace('composite_images_train_small','masks') # #修改点5，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        mask_path = self.imgs[index].replace('composite_images_train','masks') # #修改点5，如果是带噪声的训练，将这里修改为composite_noisy25_images
         mask_path = mask_path.replace(('_'+name_parts[-1]),'.png')
-        target_path = self.imgs[index].replace('composite_images_train_small','real_images') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
+        target_path = self.imgs[index].replace('composite_images_train','real_images') # #修改点6，如果是带噪声的训练，将这里修改为composite_noisy25_images
         target_path = target_path.replace(('_'+name_parts[-2]+'_'+name_parts[-1]),'.jpg')
 
         comp = Image.open(path).convert('RGB') #这段读取代码，如果在集群读取需要改变。
@@ -199,7 +199,7 @@ class HarmonizationTrainDataset(data.Dataset):
         return len(self.imgs)
 
 class HarmonizationTestDataset(data.Dataset):
-    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[1024, 1024], loader=pil_loader):
+    def __init__(self, data_root, mask_config={}, data_len=-1, image_size=[256, 256], loader=pil_loader):
         imgs = make_dataset(data_root)
         if data_len > 0:
             self.imgs = imgs[:int(data_len)]

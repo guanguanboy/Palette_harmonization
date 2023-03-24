@@ -62,7 +62,7 @@ class Palette(BaseModel):
 
 
     def evaluate_efficiency(self):
-        size = 1024
+        size = 256
         gt = torch.randn((1,3,size,size)).cuda()
         cond = torch.randn(1,3,size,size).cuda()
         mask = torch.randn(1,1,size,size).cuda()
